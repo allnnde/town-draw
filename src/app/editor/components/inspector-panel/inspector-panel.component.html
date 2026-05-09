@@ -1,0 +1,22 @@
+<aside class="inspector-panel" aria-label="Inspector de objeto">
+  <p class="eyebrow">Inspector</p>
+  <h2>{{ selectedTitle() }}</h2>
+
+  @if (selectedObject()) {
+    <dl class="details">
+      @for (detail of details(); track detail.label) {
+        <div>
+          <dt>{{ detail.label }}</dt>
+          <dd>{{ detail.value }}</dd>
+        </div>
+      }
+    </dl>
+  } @else {
+    <p class="empty-state">Usa Seleccionar y haz click sobre un rio, carretera o zona.</p>
+  }
+
+  <div class="summary">
+    <span>Boceto: {{ state.sketchObjects().length }}</span>
+    <span>Generados: {{ state.generatedObjects().length }}</span>
+  </div>
+</aside>

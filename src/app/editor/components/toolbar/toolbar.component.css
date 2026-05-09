@@ -1,0 +1,36 @@
+.toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 10rem;
+  padding: 1rem;
+  border-right: 1px solid rgba(91, 64, 35, 0.14);
+  background: #f8edd8;
+}
+
+.toolbar-title {
+  margin: 0 0 0.35rem;
+  color: #5c4024;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.tool-button {
+  border: 1px solid rgba(92, 64, 36, 0.22);
+  border-radius: 0.75rem;
+  background: rgba(255, 252, 245, 0.88);
+  color: #3b2b1a;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.7rem 0.8rem;
+  text-align: left;
+}
+
+.tool-button:hover,
+.tool-button.active {
+  border-color: #8b5e34;
+  background: #3d2b1b;
+  color: #fff6e6;
+}

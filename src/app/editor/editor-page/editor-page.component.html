@@ -1,0 +1,35 @@
+<section class="editor-page">
+  <header class="editor-header">
+    <div>
+      <p class="eyebrow">TownDraw MVP</p>
+      <h1>TownDraw</h1>
+      <p class="subtitle">Dibuja bocetos semanticos y genera un mapa base para partidas de rol.</p>
+    </div>
+
+    <div class="header-actions" aria-label="Acciones de proyecto">
+      <button type="button" class="primary" (click)="generateMap()">Generar mapa</button>
+      <button type="button" (click)="exportJson()">Exportar JSON</button>
+      <button type="button" (click)="jsonInput.click()">Importar JSON</button>
+      <button type="button" class="danger" (click)="clearMap()">Limpiar mapa</button>
+      <input #jsonInput type="file" accept="application/json,.json" (change)="importJson($event)" />
+    </div>
+  </header>
+
+  @if (importError) {
+    <p class="import-error" role="alert">{{ importError }}</p>
+  }
+
+  <div class="editor-workspace">
+    <app-toolbar />
+
+    <main class="viewport-panel" aria-label="Area central de dibujo">
+      <div class="viewport-toolbar">
+        <span>Herramienta activa: {{ state.activeTool() }}</span>
+        <span>{{ state.mapWidth() }} x {{ state.mapHeight() }}</span>
+      </div>
+      <app-pixi-viewport />
+    </main>
+
+    <app-inspector-panel />
+  </div>
+</section>

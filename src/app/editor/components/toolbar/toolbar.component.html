@@ -1,0 +1,15 @@
+<nav class="toolbar" aria-label="Herramientas de mapa">
+  <p class="toolbar-title">Herramientas</p>
+
+  @for (tool of tools; track tool.id) {
+    <button
+      type="button"
+      class="tool-button"
+      [class.active]="state.activeTool() === tool.id"
+      [attr.aria-pressed]="state.activeTool() === tool.id"
+      (click)="setTool(tool.id)"
+    >
+      {{ tool.label }}
+    </button>
+  }
+</nav>
