@@ -123,14 +123,15 @@ export class ExportImportService {
           typeof value['width'] === 'number'
         );
       case 'generated-tree':
-        return this.isPoint(value['position']);
+        return this.isPoint(value['position']) && this.hasValidGeneratedVariation(value);
       case 'generated-building':
       case 'generated-market-stall':
       case 'generated-industrial-structure':
         return (
           this.isPoint(value['position']) &&
           typeof value['width'] === 'number' &&
-          typeof value['height'] === 'number'
+          typeof value['height'] === 'number' &&
+          this.hasValidGeneratedVariation(value)
         );
       case 'generated-internal-path':
         return (
@@ -171,6 +172,16 @@ export class ExportImportService {
       );
 
     return hasPolygon || hasBrushStamps;
+  }
+
+  private hasValidGeneratedVariation(value: Record<string, unknown>): boolean {
+    const rotation = value['rotation'];
+    const variant = value['variant'];
+
+    return (
+      (rotation === undefined || typeof rotation === 'number') &&
+      (variant === undefined || typeof variant === 'number')
+    );
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

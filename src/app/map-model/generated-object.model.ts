@@ -28,6 +28,8 @@ export interface GeneratedTree {
   id: string;
   type: 'generated-tree';
   position: Point;
+  rotation?: number;
+  variant?: number;
 }
 
 export interface GeneratedBuilding {
@@ -36,6 +38,8 @@ export interface GeneratedBuilding {
   position: Point;
   width: number;
   height: number;
+  rotation?: number;
+  variant?: number;
 }
 
 export interface GeneratedMarketStall {
@@ -44,6 +48,8 @@ export interface GeneratedMarketStall {
   position: Point;
   width: number;
   height: number;
+  rotation?: number;
+  variant?: number;
 }
 
 export interface GeneratedIndustrialStructure {
@@ -52,6 +58,8 @@ export interface GeneratedIndustrialStructure {
   position: Point;
   width: number;
   height: number;
+  rotation?: number;
+  variant?: number;
 }
 
 export interface GeneratedInternalPath {
