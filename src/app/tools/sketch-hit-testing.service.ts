@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Point } from '../map-model/point.model';
 import { SketchObject } from '../map-model/sketch-object.model';
+import { isPointInZoneCoverage } from '../map-model/zone-coverage.util';
 
 const DEFAULT_TOLERANCE = 12;
 
@@ -29,10 +30,7 @@ export class SketchHitTestingService {
       case 'road':
         return this.isPointNearPolyline(point, object.points, tolerance + 4);
       case 'zone':
-        return (
-          this.isPointInsidePolygon(point, object.polygon) ||
-          this.isPointNearPolyline(point, [...object.polygon, object.polygon[0]], tolerance)
-        );
+        return isPointInZoneCoverage(point, object);
       case 'marker':
         return this.distance(point, object.position) <= tolerance;
     }
@@ -54,26 +52,6 @@ export class SketchHitTestingService {
     }
 
     return false;
-  }
-
-  private isPointInsidePolygon(point: Point, polygon: readonly Point[]): boolean {
-    let inside = false;
-
-    for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index) {
-      const currentPoint = polygon[index];
-      const previousPoint = polygon[previous];
-      const crossesY = currentPoint.y > point.y !== previousPoint.y > point.y;
-      const intersectionX =
-        ((previousPoint.x - currentPoint.x) * (point.y - currentPoint.y)) /
-          (previousPoint.y - currentPoint.y) +
-        currentPoint.x;
-
-      if (crossesY && point.x < intersectionX) {
-        inside = !inside;
-      }
-    }
-
-    return inside;
   }
 
   private distanceToSegment(point: Point, start: Point, end: Point): number {

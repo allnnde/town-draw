@@ -4,52 +4,56 @@ import { EditorTool } from '../map-model/editor-tool.model';
 import { createId } from '../map-model/id.util';
 import { clonePoint, Point } from '../map-model/point.model';
 import { ZoneSketch, ZoneType } from '../map-model/sketch-object.model';
+import {
+  DEFAULT_ZONE_BRUSH_RADIUS,
+  ZONE_BRUSH_MIN_DISTANCE,
+  distance,
+} from '../map-model/zone-coverage.util';
 import { ToolPointerEvent } from './tool-pointer-event.model';
 
 @Injectable({ providedIn: 'root' })
 export class ZoneToolService {
   private readonly state = inject(EditorStateService);
-  private startPoint: Point | null = null;
+  private brushStamps: { position: Point; radius: number }[] = [];
   private drawingPointerId: number | null = null;
   private zoneType: ZoneType = 'village';
+  private readonly brushRadius = DEFAULT_ZONE_BRUSH_RADIUS;
 
   onPointerDown(event: ToolPointerEvent, tool: EditorTool): void {
     this.zoneType = this.getZoneType(tool);
     this.drawingPointerId = event.pointerId;
-    this.startPoint = clonePoint(event.position);
-    this.updateDraft(event.position);
+    this.brushStamps = [];
+    this.addStamp(event.position, 0);
+    this.updateDraft();
   }
 
   onPointerMove(event: ToolPointerEvent): void {
-    if (!this.startPoint || this.drawingPointerId !== event.pointerId) {
+    if (this.drawingPointerId !== event.pointerId) {
       return;
     }
 
-    this.updateDraft(event.position);
+    if (this.addStamp(event.position)) {
+      this.updateDraft();
+    }
   }
 
   onPointerUp(event: ToolPointerEvent): void {
-    if (!this.startPoint || this.drawingPointerId !== event.pointerId) {
+    if (this.drawingPointerId !== event.pointerId) {
       return;
     }
 
+    this.addStamp(event.position, 0);
     this.state.setDraftSketchObject(null);
-    const minX = Math.min(this.startPoint.x, event.position.x);
-    const minY = Math.min(this.startPoint.y, event.position.y);
-    const maxX = Math.max(this.startPoint.x, event.position.x);
-    const maxY = Math.max(this.startPoint.y, event.position.y);
 
-    if (maxX - minX >= 8 && maxY - minY >= 8) {
+    if (this.brushStamps.length > 0) {
       const zone: ZoneSketch = {
         id: createId(`zone-${this.zoneType}`),
         type: 'zone',
         zoneType: this.zoneType,
-        polygon: [
-          { x: minX, y: minY },
-          { x: maxX, y: minY },
-          { x: maxX, y: maxY },
-          { x: minX, y: maxY },
-        ],
+        brushStamps: this.brushStamps.map((stamp) => ({
+          position: clonePoint(stamp.position),
+          radius: stamp.radius,
+        })),
         density: this.getDefaultDensity(this.zoneType),
       };
 
@@ -66,6 +70,8 @@ export class ZoneToolService {
         return 'market';
       case 'zone-forest':
         return 'forest';
+      case 'zone-industrial':
+        return 'industrial';
       case 'zone-village':
       case 'select':
       case 'river':
@@ -81,43 +87,39 @@ export class ZoneToolService {
         return 0.75;
       case 'market':
         return 0.55;
+      case 'industrial':
+        return 0.45;
       case 'village':
         return 0.5;
     }
   }
 
   private reset(): void {
-    this.startPoint = null;
+    this.brushStamps = [];
     this.drawingPointerId = null;
   }
 
-  private updateDraft(currentPoint: Point): void {
-    if (!this.startPoint) {
-      this.state.setDraftSketchObject(null);
-      return;
-    }
-
-    const minX = Math.min(this.startPoint.x, currentPoint.x);
-    const minY = Math.min(this.startPoint.y, currentPoint.y);
-    const maxX = Math.max(this.startPoint.x, currentPoint.x);
-    const maxY = Math.max(this.startPoint.y, currentPoint.y);
-
-    if (maxX - minX < 2 || maxY - minY < 2) {
-      this.state.setDraftSketchObject(null);
-      return;
-    }
-
+  private updateDraft(): void {
     this.state.setDraftSketchObject({
       id: `draft-zone-${this.zoneType}`,
       type: 'zone',
       zoneType: this.zoneType,
-      polygon: [
-        { x: minX, y: minY },
-        { x: maxX, y: minY },
-        { x: maxX, y: maxY },
-        { x: minX, y: maxY },
-      ],
+      brushStamps: this.brushStamps.map((stamp) => ({
+        position: clonePoint(stamp.position),
+        radius: stamp.radius,
+      })),
       density: this.getDefaultDensity(this.zoneType),
     });
+  }
+
+  private addStamp(point: Point, minimumDistance = ZONE_BRUSH_MIN_DISTANCE): boolean {
+    const lastStamp = this.brushStamps.at(-1);
+
+    if (lastStamp && distance(point, lastStamp.position) < minimumDistance) {
+      return false;
+    }
+
+    this.brushStamps.push({ position: clonePoint(point), radius: this.brushRadius });
+    return true;
   }
 }

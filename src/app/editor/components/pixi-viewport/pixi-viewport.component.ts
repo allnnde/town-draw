@@ -146,6 +146,7 @@ export class PixiViewportComponent implements AfterViewInit, OnDestroy {
       this.graphicsConstructor,
       renderedSketchObjects,
       selectedObjectId,
+      generatedObjects.length > 0,
     );
     this.app?.render();
   }

@@ -5,6 +5,7 @@ export type EditorTool =
   | 'zone-village'
   | 'zone-market'
   | 'zone-forest'
+  | 'zone-industrial'
   | 'erase';
 
 export const EDITOR_TOOLS: readonly EditorTool[] = [
@@ -14,5 +15,6 @@ export const EDITOR_TOOLS: readonly EditorTool[] = [
   'zone-village',
   'zone-market',
   'zone-forest',
+  'zone-industrial',
   'erase',
 ];

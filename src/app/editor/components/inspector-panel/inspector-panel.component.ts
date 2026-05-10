@@ -71,7 +71,8 @@ export class InspectorPanelComponent {
         return [
           ...baseRows,
           { label: 'Tipo de zona', value: object.zoneType },
-          { label: 'Vertices', value: String(object.polygon.length) },
+          { label: 'Pinceladas', value: String(object.brushStamps?.length ?? 0) },
+          { label: 'Vertices legacy', value: String(object.polygon?.length ?? 0) },
           { label: 'Densidad', value: String(object.density) },
         ];
       case 'marker':

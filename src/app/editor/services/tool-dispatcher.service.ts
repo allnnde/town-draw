@@ -32,6 +32,7 @@ export class ToolDispatcherService {
       case 'zone-village':
       case 'zone-market':
       case 'zone-forest':
+      case 'zone-industrial':
         this.zoneTool.onPointerDown(event, activeTool);
         return;
       case 'erase':
@@ -51,6 +52,7 @@ export class ToolDispatcherService {
       case 'zone-village':
       case 'zone-market':
       case 'zone-forest':
+      case 'zone-industrial':
         this.zoneTool.onPointerMove(event);
         return;
       case 'select':
@@ -70,6 +72,7 @@ export class ToolDispatcherService {
       case 'zone-village':
       case 'zone-market':
       case 'zone-forest':
+      case 'zone-industrial':
         this.zoneTool.onPointerUp(event);
         return;
       case 'select':

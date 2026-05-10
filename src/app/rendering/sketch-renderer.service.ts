@@ -8,6 +8,7 @@ import {
   SketchObject,
   ZoneSketch,
 } from '../map-model/sketch-object.model';
+import { getZoneBrushStamps, hasBrushCoverage } from '../map-model/zone-coverage.util';
 
 type GraphicsConstructor = new () => Graphics;
 
@@ -18,13 +19,20 @@ export class SketchRendererService {
     graphicsConstructor: GraphicsConstructor,
     objects: readonly SketchObject[],
     selectedObjectId: string | null,
+    hideZoneFills = false,
   ): void {
     layer.removeChildren();
 
     for (const object of objects) {
-      layer.addChild(this.createObjectGraphic(graphicsConstructor, object, false));
+      const isSelected = object.id === selectedObjectId;
+      const isDraft = object.id.startsWith('draft-');
+      const shouldHideZoneFill = hideZoneFills && object.type === 'zone' && !isSelected && !isDraft;
 
-      if (object.id === selectedObjectId) {
+      if (!shouldHideZoneFill) {
+        layer.addChild(this.createObjectGraphic(graphicsConstructor, object, false));
+      }
+
+      if (isSelected) {
         layer.addChild(this.createObjectGraphic(graphicsConstructor, object, true));
       }
     }
@@ -90,11 +98,35 @@ export class SketchRendererService {
   ): Graphics {
     const colors = {
       forest: 0x2f855a,
+      industrial: 0x4a5568,
       market: 0xc05621,
       village: 0x805ad5,
     } as const;
     const graphics = new graphicsConstructor();
-    const polygon = this.flattenPoints(zone.polygon);
+
+    if (hasBrushCoverage(zone)) {
+      for (const stamp of getZoneBrushStamps(zone)) {
+        graphics.circle(
+          stamp.position.x,
+          stamp.position.y,
+          selected ? stamp.radius + 3 : stamp.radius,
+        );
+
+        if (selected) {
+          graphics.stroke({ width: 3, color: 0xfacc15, alpha: 0.8 });
+        } else {
+          graphics.fill({ color: colors[zone.zoneType], alpha: 0.2 });
+        }
+      }
+
+      return graphics;
+    }
+
+    const polygon = this.flattenPoints(zone.polygon ?? []);
+
+    if (polygon.length === 0) {
+      return graphics;
+    }
 
     graphics.poly(polygon, true);
     graphics.fill({ color: colors[zone.zoneType], alpha: selected ? 0.38 : 0.22 });

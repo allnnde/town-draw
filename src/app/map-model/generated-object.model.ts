@@ -5,7 +5,10 @@ export type GeneratedMapObject =
   | GeneratedRoad
   | GeneratedTree
   | GeneratedBuilding
-  | GeneratedMarketStall;
+  | GeneratedMarketStall
+  | GeneratedIndustrialStructure
+  | GeneratedInternalPath
+  | GeneratedBridge;
 
 export interface GeneratedRiver {
   id: string;
@@ -41,4 +44,29 @@ export interface GeneratedMarketStall {
   position: Point;
   width: number;
   height: number;
+}
+
+export interface GeneratedIndustrialStructure {
+  id: string;
+  type: 'generated-industrial-structure';
+  position: Point;
+  width: number;
+  height: number;
+}
+
+export interface GeneratedInternalPath {
+  id: string;
+  type: 'generated-internal-path';
+  points: Point[];
+  width: number;
+  pathType: 'street' | 'aisle' | 'service-road';
+}
+
+export interface GeneratedBridge {
+  id: string;
+  type: 'generated-bridge';
+  position: Point;
+  width: number;
+  height: number;
+  angle: number;
 }

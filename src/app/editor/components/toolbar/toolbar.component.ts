@@ -22,6 +22,7 @@ export class ToolbarComponent {
     { id: 'zone-village', label: 'Poblado' },
     { id: 'zone-market', label: 'Mercado' },
     { id: 'zone-forest', label: 'Bosque' },
+    { id: 'zone-industrial', label: 'Industria' },
     { id: 'erase', label: 'Borrar' },
   ];
 

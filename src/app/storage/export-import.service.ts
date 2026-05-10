@@ -85,11 +85,11 @@ export class ExportImportService {
         );
       case 'zone':
         return (
-          Array.isArray(value['polygon']) &&
-          value['polygon'].every((point) => this.isPoint(point)) &&
+          this.hasValidZoneCoverage(value) &&
           (value['zoneType'] === 'village' ||
             value['zoneType'] === 'market' ||
-            value['zoneType'] === 'forest') &&
+            value['zoneType'] === 'forest' ||
+            value['zoneType'] === 'industrial') &&
           typeof value['density'] === 'number'
         );
       case 'marker':
@@ -126,10 +126,27 @@ export class ExportImportService {
         return this.isPoint(value['position']);
       case 'generated-building':
       case 'generated-market-stall':
+      case 'generated-industrial-structure':
         return (
           this.isPoint(value['position']) &&
           typeof value['width'] === 'number' &&
           typeof value['height'] === 'number'
+        );
+      case 'generated-internal-path':
+        return (
+          Array.isArray(value['points']) &&
+          value['points'].every((point) => this.isPoint(point)) &&
+          typeof value['width'] === 'number' &&
+          (value['pathType'] === 'street' ||
+            value['pathType'] === 'aisle' ||
+            value['pathType'] === 'service-road')
+        );
+      case 'generated-bridge':
+        return (
+          this.isPoint(value['position']) &&
+          typeof value['width'] === 'number' &&
+          typeof value['height'] === 'number' &&
+          typeof value['angle'] === 'number'
         );
       default:
         return false;
@@ -138,6 +155,22 @@ export class ExportImportService {
 
   private isPoint(value: unknown): value is Point {
     return this.isRecord(value) && typeof value['x'] === 'number' && typeof value['y'] === 'number';
+  }
+
+  private hasValidZoneCoverage(value: Record<string, unknown>): boolean {
+    const polygon = value['polygon'];
+    const brushStamps = value['brushStamps'];
+    const hasPolygon = Array.isArray(polygon) && polygon.every((point) => this.isPoint(point));
+    const hasBrushStamps =
+      Array.isArray(brushStamps) &&
+      brushStamps.every(
+        (stamp) =>
+          this.isRecord(stamp) &&
+          this.isPoint(stamp['position']) &&
+          typeof stamp['radius'] === 'number',
+      );
+
+    return hasPolygon || hasBrushStamps;
   }
 
   private isRecord(value: unknown): value is Record<string, unknown> {

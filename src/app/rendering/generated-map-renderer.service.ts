@@ -58,6 +58,29 @@ export class GeneratedMapRendererService {
           object.height,
           0xdd6b20,
         );
+      case 'generated-industrial-structure':
+        return this.createRectGraphic(
+          graphicsConstructor,
+          object.position,
+          object.width,
+          object.height,
+          0x4a5568,
+        );
+      case 'generated-internal-path':
+        return this.createInternalPathGraphic(
+          graphicsConstructor,
+          object.points,
+          object.width,
+          object.pathType,
+        );
+      case 'generated-bridge':
+        return this.createBridgeGraphic(
+          graphicsConstructor,
+          object.position,
+          object.width,
+          object.height,
+          object.angle,
+        );
     }
   }
 
@@ -106,5 +129,56 @@ export class GeneratedMapRendererService {
     graphics.stroke({ width: 2, color: 0x2d3748, alpha: 0.5 });
 
     return graphics;
+  }
+
+  private createInternalPathGraphic(
+    graphicsConstructor: GraphicsConstructor,
+    points: readonly Point[],
+    width: number,
+    pathType: 'street' | 'aisle' | 'service-road',
+  ): Graphics {
+    const colors = {
+      aisle: 0xd6bc7f,
+      'service-road': 0x52525b,
+      street: 0x8b7355,
+    } as const;
+
+    return this.createPolylineGraphic(graphicsConstructor, points, width, colors[pathType], 0.82);
+  }
+
+  private createBridgeGraphic(
+    graphicsConstructor: GraphicsConstructor,
+    position: Point,
+    width: number,
+    height: number,
+    angle: number,
+  ): Graphics {
+    const graphics = new graphicsConstructor();
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    const corners = [
+      this.rotateOffset(-halfWidth, -halfHeight, cos, sin, position),
+      this.rotateOffset(halfWidth, -halfHeight, cos, sin, position),
+      this.rotateOffset(halfWidth, halfHeight, cos, sin, position),
+      this.rotateOffset(-halfWidth, halfHeight, cos, sin, position),
+    ];
+
+    graphics.poly(
+      corners.flatMap((corner) => [corner.x, corner.y]),
+      true,
+    );
+    graphics.fill({ color: 0xc49a6c, alpha: 0.95 });
+    graphics.stroke({ width: 2, color: 0x5a3b22, alpha: 0.9 });
+
+    return graphics;
+  }
+
+  private rotateOffset(x: number, y: number, cos: number, sin: number, origin: Point): Point {
+    return {
+      x: origin.x + x * cos - y * sin,
+      y: origin.y + x * sin + y * cos,
+    };
   }
 }
