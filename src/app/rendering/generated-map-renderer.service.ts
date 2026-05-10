@@ -41,7 +41,12 @@ export class GeneratedMapRendererService {
           0.75,
         );
       case 'generated-tree':
-        return this.createTreeGraphic(graphicsConstructor, object.position);
+        return this.createTreeGraphic(
+          graphicsConstructor,
+          object.position,
+          object.rotation ?? 0,
+          object.variant ?? 0,
+        );
       case 'generated-building':
         return this.createRectGraphic(
           graphicsConstructor,
@@ -49,6 +54,8 @@ export class GeneratedMapRendererService {
           object.width,
           object.height,
           0x9f7aea,
+          object.rotation ?? 0,
+          object.variant ?? 0,
         );
       case 'generated-market-stall':
         return this.createRectGraphic(
@@ -57,6 +64,8 @@ export class GeneratedMapRendererService {
           object.width,
           object.height,
           0xdd6b20,
+          object.rotation ?? 0,
+          object.variant ?? 0,
         );
       case 'generated-industrial-structure':
         return this.createRectGraphic(
@@ -65,6 +74,8 @@ export class GeneratedMapRendererService {
           object.width,
           object.height,
           0x4a5568,
+          object.rotation ?? 0,
+          object.variant ?? 0,
         );
       case 'generated-internal-path':
         return this.createInternalPathGraphic(
@@ -106,11 +117,19 @@ export class GeneratedMapRendererService {
     return graphics;
   }
 
-  private createTreeGraphic(graphicsConstructor: GraphicsConstructor, position: Point): Graphics {
+  private createTreeGraphic(
+    graphicsConstructor: GraphicsConstructor,
+    position: Point,
+    rotation: number,
+    variant: number,
+  ): Graphics {
     const graphics = new graphicsConstructor();
-    graphics.circle(position.x, position.y, 7);
+    const radius = 6 + (variant % 3);
+    const highlight = this.rotateOffset(-2, -2, Math.cos(rotation), Math.sin(rotation), position);
+
+    graphics.circle(position.x, position.y, radius);
     graphics.fill({ color: 0x276749, alpha: 0.9 });
-    graphics.circle(position.x - 2, position.y - 2, 3);
+    graphics.circle(highlight.x, highlight.y, 3);
     graphics.fill({ color: 0x68d391, alpha: 0.75 });
 
     return graphics;
@@ -122,11 +141,25 @@ export class GeneratedMapRendererService {
     width: number,
     height: number,
     color: number,
+    rotation: number,
+    variant: number,
   ): Graphics {
     const graphics = new graphicsConstructor();
-    graphics.rect(position.x - width / 2, position.y - height / 2, width, height);
+    const corners = this.getRotatedRectCorners(position, width, height, rotation);
+
+    graphics.poly(
+      corners.flatMap((corner) => [corner.x, corner.y]),
+      true,
+    );
     graphics.fill({ color, alpha: 0.82 });
     graphics.stroke({ width: 2, color: 0x2d3748, alpha: 0.5 });
+
+    if (variant % 2 === 1) {
+      const roofLine = this.getRotatedSegment(position, width * 0.28, rotation);
+      graphics.moveTo(roofLine[0].x, roofLine[0].y);
+      graphics.lineTo(roofLine[1].x, roofLine[1].y);
+      graphics.stroke({ width: 2, color: 0xf7fafc, alpha: 0.35, cap: 'round' });
+    }
 
     return graphics;
   }
@@ -180,5 +213,34 @@ export class GeneratedMapRendererService {
       x: origin.x + x * cos - y * sin,
       y: origin.y + x * sin + y * cos,
     };
+  }
+
+  private getRotatedRectCorners(
+    position: Point,
+    width: number,
+    height: number,
+    rotation: number,
+  ): Point[] {
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+
+    return [
+      this.rotateOffset(-halfWidth, -halfHeight, cos, sin, position),
+      this.rotateOffset(halfWidth, -halfHeight, cos, sin, position),
+      this.rotateOffset(halfWidth, halfHeight, cos, sin, position),
+      this.rotateOffset(-halfWidth, halfHeight, cos, sin, position),
+    ];
+  }
+
+  private getRotatedSegment(position: Point, halfLength: number, rotation: number): [Point, Point] {
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+
+    return [
+      this.rotateOffset(-halfLength, 0, cos, sin, position),
+      this.rotateOffset(halfLength, 0, cos, sin, position),
+    ];
   }
 }
