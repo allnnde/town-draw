@@ -1,5 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { APP_VERSION } from '../../app-version';
+import packageJson from '../../../../package.json';
 import { MapGeneratorService } from '../../generation/map-generator.service';
 import { ExportImportService } from '../../storage/export-import.service';
 import { InspectorPanelComponent } from '../components/inspector-panel/inspector-panel.component';
@@ -14,7 +14,7 @@ import { EditorStateService } from '../services/editor-state.service';
   styleUrl: './editor-page.component.css',
 })
 export class EditorPageComponent {
-  readonly appVersion = APP_VERSION;
+  readonly appVersion = packageJson.version;
   readonly state = inject(EditorStateService);
   private readonly generator = inject(MapGeneratorService);
   private readonly exportImport = inject(ExportImportService);

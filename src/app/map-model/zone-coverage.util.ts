@@ -29,6 +29,64 @@ export function isPointInZoneCoverage(point: Point, zone: ZoneSketch): boolean {
   return zone.polygon ? isPointInsidePolygon(point, zone.polygon) : false;
 }
 
+export function isSegmentInZoneCoverage(
+  start: Point,
+  end: Point,
+  zone: ZoneSketch,
+  step = DEFAULT_ZONE_BRUSH_RADIUS / 3,
+): boolean {
+  const length = distance(start, end);
+  const steps = Math.max(1, Math.ceil(length / Math.max(1, step)));
+
+  for (let index = 0; index <= steps; index += 1) {
+    const t = index / steps;
+
+    if (
+      !isPointInZoneCoverage(
+        {
+          x: start.x + (end.x - start.x) * t,
+          y: start.y + (end.y - start.y) * t,
+        },
+        zone,
+      )
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+export function getZoneCoverageCenter(zone: ZoneSketch): Point | null {
+  const brushStamps = getZoneBrushStamps(zone);
+
+  if (brushStamps.length > 0) {
+    const weighted = brushStamps.reduce(
+      (sum, stamp) => ({
+        x: sum.x + stamp.position.x * stamp.radius,
+        y: sum.y + stamp.position.y * stamp.radius,
+        weight: sum.weight + stamp.radius,
+      }),
+      { x: 0, y: 0, weight: 0 },
+    );
+
+    return weighted.weight > 0
+      ? { x: weighted.x / weighted.weight, y: weighted.y / weighted.weight }
+      : null;
+  }
+
+  if (zone.polygon && zone.polygon.length > 0) {
+    const total = zone.polygon.reduce(
+      (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
+      { x: 0, y: 0 },
+    );
+
+    return { x: total.x / zone.polygon.length, y: total.y / zone.polygon.length };
+  }
+
+  return null;
+}
+
 export function getZoneBounds(zone: ZoneSketch): Bounds | null {
   const brushStamps = getZoneBrushStamps(zone);
 
