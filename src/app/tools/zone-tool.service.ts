@@ -4,6 +4,7 @@ import { EditorTool } from '../map-model/editor-tool.model';
 import { createId } from '../map-model/id.util';
 import { clonePoint, Point } from '../map-model/point.model';
 import { ZoneSketch, ZoneType } from '../map-model/sketch-object.model';
+import { deriveZonePolygonFromBrushStamps } from '../map-model/brush-zone-polygon.util';
 import {
   DEFAULT_ZONE_BRUSH_RADIUS,
   ZONE_BRUSH_MIN_DISTANCE,
@@ -46,14 +47,12 @@ export class ZoneToolService {
     this.state.setDraftSketchObject(null);
 
     if (this.brushStamps.length > 0) {
+      const polygon = deriveZonePolygonFromBrushStamps(this.brushStamps);
       const zone: ZoneSketch = {
         id: createId(`zone-${this.zoneType}`),
         type: 'zone',
         zoneType: this.zoneType,
-        brushStamps: this.brushStamps.map((stamp) => ({
-          position: clonePoint(stamp.position),
-          radius: stamp.radius,
-        })),
+        polygon,
         density: this.getDefaultDensity(this.zoneType),
       };
 
@@ -113,9 +112,11 @@ export class ZoneToolService {
   }
 
   private addStamp(point: Point, minimumDistance = ZONE_BRUSH_MIN_DISTANCE): boolean {
-    const lastStamp = this.brushStamps.at(-1);
+    const effectiveMinimumDistance = Math.max(1, minimumDistance);
 
-    if (lastStamp && distance(point, lastStamp.position) < minimumDistance) {
+    if (
+      this.brushStamps.some((stamp) => distance(point, stamp.position) < effectiveMinimumDistance)
+    ) {
       return false;
     }
 

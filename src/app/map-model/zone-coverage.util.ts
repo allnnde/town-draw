@@ -1,5 +1,6 @@
 import { Point } from './point.model';
 import { ZoneBrushStamp, ZoneSketch } from './sketch-object.model';
+import { deriveZonePolygonFromBrushStamps } from './brush-zone-polygon.util';
 
 export interface Bounds {
   minX: number;
@@ -19,14 +20,35 @@ export function hasBrushCoverage(zone: ZoneSketch): boolean {
   return getZoneBrushStamps(zone).length > 0;
 }
 
-export function isPointInZoneCoverage(point: Point, zone: ZoneSketch): boolean {
-  const brushStamps = getZoneBrushStamps(zone);
-
-  if (brushStamps.length > 0) {
-    return brushStamps.some((stamp) => distance(point, stamp.position) <= stamp.radius);
+export function getZoneCoveragePolygon(zone: ZoneSketch): readonly Point[] {
+  if (zone.polygon && zone.polygon.length >= 3) {
+    return zone.polygon;
   }
 
-  return zone.polygon ? isPointInsidePolygon(point, zone.polygon) : false;
+  const brushStamps = getZoneBrushStamps(zone);
+
+  if (brushStamps.length === 0) {
+    return [];
+  }
+
+  const polygon = deriveZonePolygonFromBrushStamps(brushStamps);
+
+  if (polygon.length >= 3) {
+    zone.polygon = polygon;
+    return polygon;
+  }
+
+  return [];
+}
+
+export function isPointInZoneCoverage(point: Point, zone: ZoneSketch): boolean {
+  const polygon = getZoneCoveragePolygon(zone);
+
+  if (polygon.length >= 3) {
+    return isPointInsidePolygon(point, polygon);
+  }
+
+  return getZoneBrushStamps(zone).some((stamp) => distance(point, stamp.position) <= stamp.radius);
 }
 
 export function isSegmentInZoneCoverage(
@@ -58,6 +80,17 @@ export function isSegmentInZoneCoverage(
 }
 
 export function getZoneCoverageCenter(zone: ZoneSketch): Point | null {
+  const polygon = getZoneCoveragePolygon(zone);
+
+  if (polygon.length > 0) {
+    const total = polygon.reduce((sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }), {
+      x: 0,
+      y: 0,
+    });
+
+    return { x: total.x / polygon.length, y: total.y / polygon.length };
+  }
+
   const brushStamps = getZoneBrushStamps(zone);
 
   if (brushStamps.length > 0) {
@@ -75,19 +108,16 @@ export function getZoneCoverageCenter(zone: ZoneSketch): Point | null {
       : null;
   }
 
-  if (zone.polygon && zone.polygon.length > 0) {
-    const total = zone.polygon.reduce(
-      (sum, point) => ({ x: sum.x + point.x, y: sum.y + point.y }),
-      { x: 0, y: 0 },
-    );
-
-    return { x: total.x / zone.polygon.length, y: total.y / zone.polygon.length };
-  }
-
   return null;
 }
 
 export function getZoneBounds(zone: ZoneSketch): Bounds | null {
+  const polygon = getZoneCoveragePolygon(zone);
+
+  if (polygon.length > 0) {
+    return getPointBounds(polygon);
+  }
+
   const brushStamps = getZoneBrushStamps(zone);
 
   if (brushStamps.length > 0) {
@@ -102,11 +132,19 @@ export function getZoneBounds(zone: ZoneSketch): Bounds | null {
     );
   }
 
-  if (zone.polygon && zone.polygon.length > 0) {
-    return getPointBounds(zone.polygon);
+  return null;
+}
+
+export function getZoneCoverageArea(zone: ZoneSketch): number {
+  const polygon = getZoneCoveragePolygon(zone);
+
+  if (polygon.length >= 3) {
+    return Math.abs(getPolygonSignedArea(polygon));
   }
 
-  return null;
+  const bounds = getZoneBounds(zone);
+
+  return bounds ? (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY) : 0;
 }
 
 export function getPointBounds(points: readonly Point[]): Bounds {
@@ -122,6 +160,10 @@ export function getPointBounds(points: readonly Point[]): Bounds {
 }
 
 export function isPointInsidePolygon(point: Point, polygon: readonly Point[]): boolean {
+  if (polygon.length < 3) {
+    return false;
+  }
+
   let inside = false;
 
   for (
@@ -143,6 +185,18 @@ export function isPointInsidePolygon(point: Point, polygon: readonly Point[]): b
   }
 
   return inside;
+}
+
+function getPolygonSignedArea(polygon: readonly Point[]): number {
+  let area = 0;
+
+  for (let index = 0; index < polygon.length; index += 1) {
+    const current = polygon[index];
+    const next = polygon[(index + 1) % polygon.length];
+    area += current.x * next.y - next.x * current.y;
+  }
+
+  return area / 2;
 }
 
 export function distance(first: Point, second: Point): number {
