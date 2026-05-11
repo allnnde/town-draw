@@ -1,6 +1,7 @@
 import { MapGeneratorService } from './map-generator.service';
 import { GeneratedMapObject } from '../map-model/generated-object.model';
 import { SketchObject } from '../map-model/sketch-object.model';
+import { UNTITLED_TOWN_MAP_REGRESSION_SKETCH } from './fixtures/untitled-town-map-regression.fixture';
 
 const service = new MapGeneratorService();
 
@@ -140,6 +141,33 @@ describe('MapGeneratorService', () => {
     expect(uniqueRoundedY.size).toBeGreaterThan(Math.floor(buildings.length / 3));
   });
 
+  it('treats repeated overlapping brush stamps as one zone coverage area', () => {
+    const baseZone: SketchObject = {
+      id: 'overlap-village-zone',
+      type: 'zone',
+      zoneType: 'village',
+      brushStamps: [{ position: { x: 180, y: 180 }, radius: 150 }],
+      density: 0.85,
+    };
+    const repeatedZone: SketchObject = {
+      ...baseZone,
+      brushStamps: [
+        { position: { x: 180, y: 180 }, radius: 150 },
+        { position: { x: 180, y: 180 }, radius: 150 },
+        { position: { x: 180, y: 180 }, radius: 150 },
+      ],
+    };
+    const baseGenerated = service.generate([baseZone]);
+    const repeatedGenerated = service.generate([repeatedZone]);
+
+    expect(countType(repeatedGenerated, 'generated-building')).toBe(
+      countType(baseGenerated, 'generated-building'),
+    );
+    expect(internalPaths(repeatedGenerated, 'street').length).toBe(
+      internalPaths(baseGenerated, 'street').length,
+    );
+  });
+
   it('generates neighborhood streets from zone coverage instead of connecting every house', () => {
     const generated = service.generate([
       {
@@ -208,11 +236,7 @@ describe('MapGeneratorService', () => {
 
     for (let first = 0; first < streets.length; first += 1) {
       for (let second = first + 1; second < streets.length; second += 1) {
-        if (pathsShareEndpoint(streets[first].points, streets[second].points)) {
-          continue;
-        }
-
-        if (pathsIntersect(streets[first].points, streets[second].points)) {
+        if (pathsTouchOrCross(streets[first].points, streets[second].points)) {
           continue;
         }
 
@@ -309,10 +333,33 @@ describe('MapGeneratorService', () => {
     expect(buildings.length).toBeGreaterThan(20);
     expect(internalStreets.length).toBeGreaterThanOrEqual(3);
     expect(totalPathLength(internalStreets)).toBeGreaterThan(420);
+    expect(pathsAreConnected(internalStreets)).toBe(true);
     expect(
       internalStreets.some((street) => hasObjectsOnBothSides(street.points, buildings, 95)),
     ).toBe(true);
     expect(pathsAreClearOfObjects(internalStreets, buildings)).toBe(true);
+  });
+
+  it('keeps reported exported districts on connected branch networks', () => {
+    const generated = service.generate(UNTITLED_TOWN_MAP_REGRESSION_SKETCH);
+    const districtIds = [
+      'generated-zone-village-35bc44ae-69b2-4e88-937e-106ba117d5b6',
+      'generated-zone-village-3edd9747-0e5d-4c74-a764-c5b054a4391e',
+    ];
+
+    for (const districtId of districtIds) {
+      const streets = internalPaths(generated, 'street').filter(
+        (street) => street.id.startsWith(districtId) && !street.id.includes('road-access'),
+      );
+      const buildings = generated.filter(
+        (object): object is Extract<GeneratedMapObject, { type: 'generated-building' }> =>
+          object.type === 'generated-building' && object.id.startsWith(districtId),
+      );
+
+      expect(streets.length).toBeGreaterThanOrEqual(3);
+      expect(pathsAreConnected(streets)).toBe(true);
+      expect(pathsAreClearOfObjects(streets, buildings)).toBe(true);
+    }
   });
 
   it('connects populated district circulation to a nearby main road', () => {
@@ -595,6 +642,48 @@ function pathsIntersect(
   }
 
   return false;
+}
+
+function pathsAreConnected(
+  paths: readonly Extract<GeneratedMapObject, { type: 'generated-internal-path' }>[],
+): boolean {
+  if (paths.length <= 1) {
+    return true;
+  }
+
+  const connected = new Set<number>([0]);
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+
+    for (let index = 0; index < paths.length; index += 1) {
+      if (connected.has(index)) {
+        continue;
+      }
+
+      for (const connectedIndex of connected) {
+        if (pathsTouchOrCross(paths[index].points, paths[connectedIndex].points)) {
+          connected.add(index);
+          changed = true;
+          break;
+        }
+      }
+    }
+  }
+
+  return connected.size === paths.length;
+}
+
+function pathsTouchOrCross(
+  first: readonly { x: number; y: number }[],
+  second: readonly { x: number; y: number }[],
+): boolean {
+  return (
+    pathsShareEndpoint(first, second) ||
+    pathsIntersect(first, second) ||
+    pathDistance(first, second) < 0.01
+  );
 }
 
 function totalPathLength(

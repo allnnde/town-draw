@@ -111,13 +111,14 @@ export class SketchRendererService {
           stamp.position.y,
           selected ? stamp.radius + 3 : stamp.radius,
         );
-
-        if (selected) {
-          graphics.stroke({ width: 3, color: 0xfacc15, alpha: 0.8 });
-        } else {
-          graphics.fill({ color: colors[zone.zoneType], alpha: 0.2 });
-        }
       }
+
+      graphics.fill({ color: colors[zone.zoneType], alpha: selected ? 0.34 : 0.2 });
+      graphics.stroke({
+        width: selected ? 4 : 1,
+        color: selected ? 0xfacc15 : colors[zone.zoneType],
+        alpha: selected ? 0.85 : 0.35,
+      });
 
       return graphics;
     }

@@ -8,7 +8,13 @@ import {
   ZoneSketch,
   ZoneType,
 } from '../map-model/sketch-object.model';
-import { Bounds, getZoneBounds, isPointInZoneCoverage } from '../map-model/zone-coverage.util';
+import {
+  Bounds,
+  getZoneBounds,
+  getZoneBrushStamps,
+  getZoneCoverageCenter,
+  isPointInZoneCoverage,
+} from '../map-model/zone-coverage.util';
 
 type GeneratedInternalPathObject = Extract<GeneratedMapObject, { type: 'generated-internal-path' }>;
 type GeneratedRoadObject = Extract<GeneratedMapObject, { type: 'generated-road' }>;
@@ -415,66 +421,64 @@ export class MapGeneratorService {
     const random = this.createRandom(
       `${zone.object.id}:${zone.index}:${zone.object.zoneType}:paths`,
     );
-    const center = this.getBoundsCenter(bounds);
+    const center = this.getDistrictCenter(zone, zones, rivers, bounds, params);
     const roadGuide = this.getNearestRoadGuide(center, roads);
-    const baseAngle = roadGuide && roadGuide.distance < 180 ? roadGuide.angle : random() * Math.PI;
+    const baseAngle =
+      roadGuide && roadGuide.distance < 180
+        ? roadGuide.angle
+        : this.getDistrictAxisAngle(zone.object, bounds, random);
     const paths: GeneratedInternalPathObject[] = [];
     const pathType = this.getPathType(zone.object.zoneType);
     const desiredPathCount = this.getDesiredDistrictPathCount(bounds, params, plannedObjectCount);
-    const pathCount = Math.min(params.maxMainPaths, desiredPathCount);
+    const mainPath = this.createConnectedDistrictPath(
+      zone,
+      zones,
+      rivers,
+      bounds,
+      center,
+      baseAngle + (random() - 0.5) * 0.22,
+      params,
+      pathType,
+      random,
+      0,
+      true,
+    );
 
-    for (let index = 0; index < pathCount; index += 1) {
-      const angle = baseAngle + (index % 2 === 0 ? 0 : Math.PI / 2) + (random() - 0.5) * 0.75;
-      const origin = this.offsetPoint(
-        center,
-        angle + Math.PI / 2,
-        (index - (pathCount - 1) / 2) * params.pathSpacing * (0.65 + random() * 0.45),
-      );
-
-      this.appendNonOverlappingPaths(
-        paths,
-        this.createOrganicPathChunks(
-          zone,
-          zones,
-          rivers,
-          bounds,
-          origin,
-          angle,
-          params,
-          pathType,
-          random,
-          paths.length,
-        ),
-        params.pathWidth * 0.9,
-      );
+    if (mainPath) {
+      paths.push(mainPath);
     }
 
-    for (let index = 0; index < params.maxBranches && paths.length < desiredPathCount; index += 1) {
-      if (paths.length === 0) {
-        continue;
-      }
+    const branchTarget = Math.min(params.maxBranches, Math.max(0, desiredPathCount - paths.length));
 
-      const sourcePath = paths[Math.floor(random() * paths.length)];
-      const source = sourcePath.points[Math.floor(sourcePath.points.length / 2)];
-      const angle = baseAngle + Math.PI / 2 + (random() - 0.5) * 1.2;
-
-      this.appendNonOverlappingPaths(
-        paths,
-        this.createOrganicPathChunks(
-          zone,
-          zones,
-          rivers,
-          bounds,
-          source,
-          angle,
-          params,
-          pathType,
-          random,
-          paths.length,
-          0.55,
-        ),
-        params.pathWidth,
+    for (
+      let attempt = 0;
+      paths.length > 0 && paths.length < branchTarget + 1 && attempt < branchTarget * 3;
+      attempt += 1
+    ) {
+      const sourcePath = paths[attempt % paths.length];
+      const source = this.getPathPointAtFraction(
+        sourcePath.points,
+        ((attempt % branchTarget) + 1) / (branchTarget + 1),
       );
+      const side = attempt % 2 === 0 ? 1 : -1;
+      const branch = this.createConnectedDistrictPath(
+        zone,
+        zones,
+        rivers,
+        bounds,
+        source,
+        baseAngle + side * (Math.PI / 2 + (random() - 0.5) * 0.46),
+        params,
+        pathType,
+        random,
+        paths.length,
+        false,
+        0.72,
+      );
+
+      if (branch && this.isConnectedBranchUseful(paths, branch, params)) {
+        paths.push(branch);
+      }
     }
 
     if (roadGuide && roadGuide.distance <= this.getRoadAccessRange(params)) {
@@ -496,6 +500,200 @@ export class MapGeneratorService {
     }
 
     return paths;
+  }
+
+  private getDistrictCenter(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    bounds: Bounds,
+    params: LayoutParams,
+  ): Point {
+    const preferred = getZoneCoverageCenter(zone.object) ?? this.getBoundsCenter(bounds);
+
+    if (this.isEligibleZonePoint(preferred, zone, zones, rivers, params.waterClearance)) {
+      return preferred;
+    }
+
+    const fallback = this.getBoundsCenter(bounds);
+
+    if (this.isEligibleZonePoint(fallback, zone, zones, rivers, params.waterClearance)) {
+      return fallback;
+    }
+
+    for (const stamp of getZoneBrushStamps(zone.object)) {
+      if (this.isEligibleZonePoint(stamp.position, zone, zones, rivers, params.waterClearance)) {
+        return stamp.position;
+      }
+    }
+
+    return preferred;
+  }
+
+  private getDistrictAxisAngle(zone: ZoneSketch, bounds: Bounds, random: () => number): number {
+    const stamps = getZoneBrushStamps(zone);
+
+    if (stamps.length >= 2) {
+      let bestStart = stamps[0].position;
+      let bestEnd = stamps[1].position;
+      let bestDistance = 0;
+
+      for (let first = 0; first < stamps.length; first += 1) {
+        for (let second = first + 1; second < stamps.length; second += 1) {
+          const distance = this.distance(stamps[first].position, stamps[second].position);
+
+          if (distance > bestDistance) {
+            bestStart = stamps[first].position;
+            bestEnd = stamps[second].position;
+            bestDistance = distance;
+          }
+        }
+      }
+
+      return Math.atan2(bestEnd.y - bestStart.y, bestEnd.x - bestStart.x);
+    }
+
+    return bounds.maxX - bounds.minX >= bounds.maxY - bounds.minY
+      ? (random() - 0.5) * 0.3
+      : Math.PI / 2 + (random() - 0.5) * 0.3;
+  }
+
+  private createConnectedDistrictPath(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    bounds: Bounds,
+    source: Point,
+    angle: number,
+    params: LayoutParams,
+    pathType: GeneratedInternalPathObject['pathType'],
+    random: () => number,
+    index: number,
+    bidirectional: boolean,
+    lengthScale = 1,
+  ): GeneratedInternalPathObject | null {
+    const halfLength = (this.getBoundsDiagonal(bounds) * lengthScale) / 2;
+    const step = Math.max(12, params.pathWidth + 5);
+    const curveAmplitude = params.pathSpacing * 0.08;
+    const curvePhase = random() * Math.PI * 2;
+    const forward = this.collectConnectedPathPoints(
+      zone,
+      zones,
+      rivers,
+      source,
+      angle,
+      halfLength,
+      step,
+      curveAmplitude,
+      curvePhase,
+      params,
+    );
+    const points = bidirectional
+      ? [
+          ...this.collectConnectedPathPoints(
+            zone,
+            zones,
+            rivers,
+            source,
+            angle + Math.PI,
+            halfLength,
+            step,
+            curveAmplitude,
+            curvePhase,
+            params,
+          )
+            .slice(1)
+            .reverse(),
+          ...forward,
+        ]
+      : forward;
+
+    if (points.length < 2 || this.getPathLength(points) < params.minPathLength) {
+      return null;
+    }
+
+    return {
+      id: `generated-${zone.object.id}-${pathType}-branch-${index}`,
+      type: 'generated-internal-path',
+      points: points.map(clonePoint),
+      width: params.pathWidth,
+      pathType,
+    };
+  }
+
+  private collectConnectedPathPoints(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    source: Point,
+    angle: number,
+    maxLength: number,
+    step: number,
+    curveAmplitude: number,
+    curvePhase: number,
+    params: LayoutParams,
+  ): Point[] {
+    const points = [clonePoint(source)];
+    const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+    const perpendicular = { x: -direction.y, y: direction.x };
+
+    for (let distance = step; distance <= maxLength; distance += step) {
+      const curve = Math.sin(distance / 84 + curvePhase) * curveAmplitude;
+      const point = {
+        x: source.x + direction.x * distance + perpendicular.x * curve,
+        y: source.y + direction.y * distance + perpendicular.y * curve,
+      };
+      const previous = points[points.length - 1];
+
+      if (
+        !this.isEligibleZonePoint(point, zone, zones, rivers, params.waterClearance) ||
+        !this.isSampledSegmentValid(
+          previous,
+          point,
+          (sample) => this.isEligibleZonePoint(sample, zone, zones, rivers, params.waterClearance),
+          Math.max(6, params.pathWidth / 2),
+        )
+      ) {
+        break;
+      }
+
+      points.push(point);
+    }
+
+    return points;
+  }
+
+  private getPathPointAtFraction(points: readonly Point[], fraction: number): Point {
+    if (points.length === 0) {
+      return { x: 0, y: 0 };
+    }
+
+    const index = Math.max(
+      0,
+      Math.min(points.length - 1, Math.round((points.length - 1) * fraction)),
+    );
+
+    return points[index];
+  }
+
+  private isConnectedBranchUseful(
+    paths: readonly GeneratedInternalPathObject[],
+    branch: GeneratedInternalPathObject,
+    params: LayoutParams,
+  ): boolean {
+    const branchEnd = branch.points[branch.points.length - 1];
+
+    return paths.every((path) => {
+      if (this.distance(branch.points[0], path.points[0]) < 0.01) {
+        return true;
+      }
+
+      if (path.points.some((point) => this.distance(point, branch.points[0]) < params.pathWidth)) {
+        return this.distanceToPolyline(branchEnd, path.points) > params.pathSpacing * 0.35;
+      }
+
+      return this.getPathDistance(path.points, branch.points) > params.pathWidth * 0.65;
+    });
   }
 
   private generateObjectAwarePaths(

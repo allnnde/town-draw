@@ -17,6 +17,21 @@ describe('SketchHitTestingService', () => {
     expect(service.findObjectAt({ x: 90, y: 50 }, [zone])).toBeNull();
   });
 
+  it('selects brush-painted zones across merged adjacent stamps', () => {
+    const zone: SketchObject = {
+      id: 'zone-merged',
+      type: 'zone',
+      zoneType: 'village',
+      brushStamps: [
+        { position: { x: 50, y: 50 }, radius: 24 },
+        { position: { x: 94, y: 50 }, radius: 24 },
+      ],
+      density: 0.5,
+    };
+
+    expect(service.findObjectAt({ x: 72, y: 50 }, [zone])?.id).toBe('zone-merged');
+  });
+
   it('keeps legacy polygon zone hit testing compatible', () => {
     const zone: SketchObject = {
       id: 'zone-legacy',
