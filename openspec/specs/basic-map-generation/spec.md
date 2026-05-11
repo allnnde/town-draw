@@ -109,7 +109,7 @@ The generator SHALL treat river coverage as blocked space for generated building
 
 ### Requirement: Generated placement is organic and coherent
 
-The generator SHALL place zone-generated objects using a deterministic organic distribution that avoids perfect rows while preserving readable spacing and organization.
+The generator SHALL place zone-generated objects using deterministic organic distributions that avoid perfect rows, visible grids, and spacing that scales directly from the total zone size.
 
 #### Scenario: Village generation avoids perfect grids
 
@@ -121,24 +121,49 @@ The generator SHALL place zone-generated objects using a deterministic organic d
 - **WHEN** the same sketch is generated repeatedly without edits
 - **THEN** generated placement remains stable enough for predictable editing and testing
 
+#### Scenario: Zone size does not dictate object spacing
+
+- **WHEN** two village zones use the same density and have different painted sizes
+- **THEN** the normal spacing between neighboring buildings remains within the same configured range while the larger zone can contain more buildings
+
+#### Scenario: Small zones do not over-compress structures
+
+- **WHEN** a painted zone is too small for the requested density and type-specific spacing
+- **THEN** the generator reduces the number of generated objects instead of placing them closer than the type-specific minimum spacing
+
 ### Requirement: Settlements and activity zones generate internal circulation
 
-The generator SHALL add internal circulation paths for populated zone types where generated objects need access.
+The generator SHALL add internal circulation paths for populated zone types where generated objects need access. For village, market, and industrial zones, circulation SHALL be derived from generated object placement and any reachable nearby main road, SHALL route through non-blocked accessible gaps, and MUST NOT be generated as detached arbitrary segments that ignore the generated objects.
 
 #### Scenario: Village generates streets between houses
 
 - **WHEN** a village zone generates multiple buildings
-- **THEN** generated road/street segments connect or pass near groups of buildings
+- **THEN** generated road/street segments connect, pass between, or pass near groups of buildings while maintaining clearance from generated building footprints
 
 #### Scenario: Market generates aisles between stalls
 
 - **WHEN** a market zone generates multiple stalls
-- **THEN** generated aisle/path segments keep visible gaps between stall groups
+- **THEN** generated aisle/path segments keep visible gaps between stall groups and maintain clearance from generated stall footprints
 
 #### Scenario: Industrial zone generates service roads
 
 - **WHEN** an industrial zone generates multiple structures
-- **THEN** generated service-road segments connect or pass near industrial structures
+- **THEN** generated service-road segments connect, pass between, or pass near industrial structures while maintaining clearance from generated structure footprints
+
+#### Scenario: Populated district connects to a nearby main road
+
+- **WHEN** a village, market, or industrial zone generates internal circulation and a user-drawn main road is within the district road-connection range with an unobstructed route
+- **THEN** the generated circulation includes an access path with one endpoint on or within the visible width of that generated road and another endpoint connected to the internal district circulation
+
+#### Scenario: Blocked road access is not forced
+
+- **WHEN** the nearest main road would require crossing water or another blocked area without an explicit bridge rule
+- **THEN** generated district circulation MUST NOT add a connector across that blocker
+
+#### Scenario: District circulation remains deterministic
+
+- **WHEN** the same sketch is generated repeatedly without edits
+- **THEN** generated streets, aisles, service roads, and road-access connectors remain stable for that sketch
 
 ### Requirement: Road and water conflicts are order-aware
 
@@ -153,4 +178,37 @@ The generator SHALL resolve road/river intersections according to sketch order s
 
 - **WHEN** a river sketch is ordered after an intersecting road sketch
 - **THEN** the generated map interrupts or splits the generated road at the river crossing and MUST NOT add a bridge automatically
+
+### Requirement: Generated structures include deterministic visual variation
+
+The generator SHALL provide deterministic visual variation for generated structures so repeated content does not look copied or axis-aligned.
+
+#### Scenario: Buildings have varied rotation and size
+
+- **WHEN** a village zone generates multiple buildings
+- **THEN** generated buildings include varied sizes and renderable rotations while remaining stable across regeneration without sketch edits
+
+#### Scenario: Markets and industry vary by type
+
+- **WHEN** market or industrial zones generate stalls or structures
+- **THEN** generated objects include type-appropriate size, rotation, or variant differences without breaking import of older generated data
+
+### Requirement: Generation integrates existing roads and rivers into zone layouts
+
+The generator SHALL use existing roads and rivers as layout constraints when placing zone content and internal circulation.
+
+#### Scenario: Existing roads guide settlement access
+
+- **WHEN** a village, market, or industrial zone overlaps or approaches an existing road sketch
+- **THEN** generated internal circulation can connect near that road or orient nearby structures toward it while preserving valid spacing and road clearance
+
+#### Scenario: Rivers shape nearby layouts
+
+- **WHEN** a zone overlaps or approaches a river sketch
+- **THEN** generated structures and internal paths keep water clearance and organize around the blocked river coverage rather than ignoring it
+
+#### Scenario: Road and river conflict results remain respected
+
+- **WHEN** road/river conflicts generate bridges or cut roads
+- **THEN** zone-generated structures and internal paths respect those generated conflict results and MUST NOT place content over blocked water crossings
 

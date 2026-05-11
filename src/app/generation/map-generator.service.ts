@@ -62,6 +62,21 @@ interface GeneratedPlacement {
   spacing: number;
 }
 
+interface PlacementFootprint {
+  position: Point;
+  radius: number;
+}
+
+interface CirculationNode {
+  point: Point;
+  weight: number;
+}
+
+interface CirculationEdge {
+  start: Point;
+  end: Point;
+}
+
 interface RoadGuide {
   point: Point;
   distance: number;
@@ -270,7 +285,6 @@ export class MapGeneratorService {
       }));
     }
 
-    const paths = this.generateOrganicPaths(zone, zones, rivers, roads, params);
     const placements = this.getOrganicPlacements(
       zone,
       zones,
@@ -278,8 +292,9 @@ export class MapGeneratorService {
       roads,
       this.getCount(area, zone.object.density, params),
       params,
-      paths,
+      [],
     );
+    const paths = this.generateObjectAwarePaths(zone, zones, rivers, roads, params, placements);
 
     switch (zone.object.zoneType) {
       case 'village':
@@ -487,6 +502,405 @@ export class MapGeneratorService {
     }
 
     return paths;
+  }
+
+  private generateObjectAwarePaths(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    roads: readonly GeneratedRoadObject[],
+    params: LayoutParams,
+    placements: readonly GeneratedPlacement[],
+  ): GeneratedInternalPathObject[] {
+    const bounds = getZoneBounds(zone.object);
+
+    if (!bounds || params.maxMainPaths === 0 || placements.length === 0) {
+      return [];
+    }
+
+    const random = this.createRandom(
+      `${zone.object.id}:${zone.index}:${zone.object.zoneType}:object-aware-paths`,
+    );
+    const pathType = this.getPathType(zone.object.zoneType);
+    const footprints = this.getPlacementFootprints(placements, params.pathWidth);
+    const nodes = this.getCirculationNodes(
+      zone,
+      zones,
+      rivers,
+      bounds,
+      params,
+      placements,
+      footprints,
+    );
+    const maxEdges = Math.max(1, params.maxMainPaths + params.maxBranches);
+    const edges = this.getCirculationEdges(
+      zone,
+      zones,
+      rivers,
+      params,
+      footprints,
+      nodes,
+      maxEdges,
+    );
+    const paths: GeneratedInternalPathObject[] = [];
+
+    for (const edge of edges) {
+      const path = this.createCirculationPathFromEdge(
+        zone,
+        zones,
+        rivers,
+        footprints,
+        params,
+        pathType,
+        edge,
+        random,
+        paths.length,
+      );
+
+      if (path && this.isPathFarEnoughFromExisting(paths, path, params.pathWidth * 0.8)) {
+        paths.push(path);
+      }
+    }
+
+    if (paths.length === 0) {
+      paths.push(
+        ...this.createObjectAwareAxisPaths(
+          zone,
+          zones,
+          rivers,
+          bounds,
+          footprints,
+          params,
+          pathType,
+          placements,
+          random,
+          paths.length,
+        ),
+      );
+    }
+
+    const roadGuide = this.getNearestDistrictRoadGuide(placements, bounds, roads);
+
+    if (roadGuide && roadGuide.distance <= this.getRoadAccessRange(params)) {
+      const pathEndpointNodes = this.getPathEndpointNodes(paths);
+      const accessNodes = pathEndpointNodes.length > 0 ? pathEndpointNodes : nodes;
+      const accessPath = this.createRoadAccessConnector(
+        zone,
+        zones,
+        rivers,
+        footprints,
+        params,
+        pathType,
+        roadGuide,
+        accessNodes,
+        paths.length,
+      );
+
+      if (accessPath) {
+        paths.push(accessPath);
+      }
+    }
+
+    return paths;
+  }
+
+  private getCirculationNodes(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    bounds: Bounds,
+    params: LayoutParams,
+    placements: readonly GeneratedPlacement[],
+    footprints: readonly PlacementFootprint[],
+  ): CirculationNode[] {
+    const center = this.getPlacementCenter(placements) ?? this.getBoundsCenter(bounds);
+    const nodes: CirculationNode[] = [];
+    const addNode = (point: Point, weight: number): void => {
+      if (
+        this.isInternalPathPointValid(point, zone, zones, rivers, footprints, params) &&
+        nodes.every((node) => this.distance(node.point, point) > params.pathWidth * 1.4)
+      ) {
+        nodes.push({ point: clonePoint(point), weight });
+      }
+    };
+
+    addNode(center, 0);
+
+    const pairs: { point: Point; distance: number }[] = [];
+
+    for (let first = 0; first < placements.length; first += 1) {
+      for (let second = first + 1; second < placements.length; second += 1) {
+        const firstPlacement = placements[first];
+        const secondPlacement = placements[second];
+        const distance = this.distance(firstPlacement.position, secondPlacement.position);
+
+        if (distance < params.minSpacing * 0.85 || distance > params.minSpacing * 3.2) {
+          continue;
+        }
+
+        pairs.push({
+          point: {
+            x: (firstPlacement.position.x + secondPlacement.position.x) / 2,
+            y: (firstPlacement.position.y + secondPlacement.position.y) / 2,
+          },
+          distance,
+        });
+      }
+    }
+
+    for (const pair of pairs.sort((first, second) => first.distance - second.distance)) {
+      addNode(pair.point, pair.distance);
+
+      if (nodes.length >= params.maxMainPaths + params.maxBranches + 4) {
+        break;
+      }
+    }
+
+    for (let index = 0; nodes.length < 2 && index < 8; index += 1) {
+      addNode(
+        this.offsetPoint(center, (Math.PI * 2 * index) / 8, params.minSpacing * 0.65),
+        params.minSpacing * 4,
+      );
+    }
+
+    return nodes.sort(
+      (first, second) =>
+        first.weight - second.weight ||
+        this.distance(first.point, center) - this.distance(second.point, center),
+    );
+  }
+
+  private getCirculationEdges(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    params: LayoutParams,
+    footprints: readonly PlacementFootprint[],
+    nodes: readonly CirculationNode[],
+    maxEdges: number,
+  ): CirculationEdge[] {
+    if (nodes.length < 2) {
+      return [];
+    }
+
+    const connected = new Set<number>([0]);
+    const edges: CirculationEdge[] = [];
+
+    while (connected.size < nodes.length && edges.length < maxEdges) {
+      let best: { from: number; to: number; distance: number } | null = null;
+
+      for (const from of connected) {
+        for (let to = 0; to < nodes.length; to += 1) {
+          if (connected.has(to)) {
+            continue;
+          }
+
+          const distance = this.distance(nodes[from].point, nodes[to].point);
+
+          if (
+            (!best || distance < best.distance) &&
+            this.isInternalPathSegmentValid(
+              nodes[from].point,
+              nodes[to].point,
+              zone,
+              zones,
+              rivers,
+              footprints,
+              params,
+            )
+          ) {
+            best = { from, to, distance };
+          }
+        }
+      }
+
+      if (!best) {
+        break;
+      }
+
+      connected.add(best.to);
+      edges.push({ start: nodes[best.from].point, end: nodes[best.to].point });
+    }
+
+    return edges;
+  }
+
+  private createCirculationPathFromEdge(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    footprints: readonly PlacementFootprint[],
+    params: LayoutParams,
+    pathType: GeneratedInternalPathObject['pathType'],
+    edge: CirculationEdge,
+    random: () => number,
+    index: number,
+  ): GeneratedInternalPathObject | null {
+    if (this.distance(edge.start, edge.end) < params.minPathLength * 0.35) {
+      return null;
+    }
+
+    const angle = Math.atan2(edge.end.y - edge.start.y, edge.end.x - edge.start.x);
+    const midpoint = {
+      x: (edge.start.x + edge.end.x) / 2,
+      y: (edge.start.y + edge.end.y) / 2,
+    };
+    const bentMidpoint = this.offsetPoint(
+      midpoint,
+      angle + Math.PI / 2,
+      (random() - 0.5) * params.pathSpacing * 0.18,
+    );
+    const points = [edge.start, bentMidpoint, edge.end];
+    const isSegmentValid = (start: Point, end: Point): boolean =>
+      this.isInternalPathSegmentValid(start, end, zone, zones, rivers, footprints, params);
+    if (isSegmentValid(points[0], points[1]) && isSegmentValid(points[1], points[2])) {
+      return {
+        id: `generated-${zone.object.id}-${pathType}-object-aware-${index}`,
+        type: 'generated-internal-path',
+        points: points.map(clonePoint),
+        width: params.pathWidth,
+        pathType,
+      };
+    }
+
+    if (!isSegmentValid(edge.start, edge.end)) {
+      return null;
+    }
+
+    return {
+      id: `generated-${zone.object.id}-${pathType}-object-aware-${index}`,
+      type: 'generated-internal-path',
+      points: [edge.start, midpoint, edge.end].map(clonePoint),
+      width: params.pathWidth,
+      pathType,
+    };
+  }
+
+  private isPathFarEnoughFromExisting(
+    paths: readonly GeneratedInternalPathObject[],
+    candidate: GeneratedInternalPathObject,
+    minSeparation: number,
+  ): boolean {
+    return paths.every(
+      (path) => this.getPathDistance(path.points, candidate.points) > minSeparation,
+    );
+  }
+
+  private createObjectAwareAxisPaths(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    bounds: Bounds,
+    footprints: readonly PlacementFootprint[],
+    params: LayoutParams,
+    pathType: GeneratedInternalPathObject['pathType'],
+    placements: readonly GeneratedPlacement[],
+    random: () => number,
+    startIndex: number,
+  ): GeneratedInternalPathObject[] {
+    const center = this.getPlacementCenter(placements) ?? this.getBoundsCenter(bounds);
+    const angle = this.getPlacementAxisAngle(placements) + (random() - 0.5) * 0.25;
+    const direction = { x: Math.cos(angle), y: Math.sin(angle) };
+    const perpendicular = { x: -direction.y, y: direction.x };
+    const halfLength = this.getBoundsDiagonal(bounds) / 2;
+    const step = Math.max(10, params.pathWidth + 4);
+    const offsets = [0, -params.pathSpacing * 0.45, params.pathSpacing * 0.45];
+    const chunks: Point[][] = [];
+
+    for (const offset of offsets) {
+      let chunk: Point[] = [];
+
+      for (let distance = -halfLength; distance <= halfLength; distance += step) {
+        const point = {
+          x: center.x + perpendicular.x * offset + direction.x * distance,
+          y: center.y + perpendicular.y * offset + direction.y * distance,
+        };
+
+        if (this.isInternalPathPointValid(point, zone, zones, rivers, footprints, params)) {
+          chunk.push(point);
+        } else {
+          this.addObjectAwarePathChunk(chunks, chunk, zone, zones, rivers, footprints, params);
+          chunk = [];
+        }
+      }
+
+      this.addObjectAwarePathChunk(chunks, chunk, zone, zones, rivers, footprints, params);
+
+      if (chunks.length >= Math.max(1, params.maxMainPaths)) {
+        break;
+      }
+    }
+
+    return chunks.slice(0, Math.max(1, params.maxMainPaths)).map((points, index) => ({
+      id: `generated-${zone.object.id}-${pathType}-axis-${startIndex + index}`,
+      type: 'generated-internal-path',
+      points: points.map(clonePoint),
+      width: params.pathWidth,
+      pathType,
+    }));
+  }
+
+  private addObjectAwarePathChunk(
+    chunks: Point[][],
+    chunk: readonly Point[],
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    footprints: readonly PlacementFootprint[],
+    params: LayoutParams,
+  ): void {
+    if (chunk.length < 3 || this.getPathLength(chunk) < params.minPathLength * 0.5) {
+      return;
+    }
+
+    for (let index = 0; index < chunk.length - 1; index += 1) {
+      if (
+        !this.isInternalPathSegmentValid(
+          chunk[index],
+          chunk[index + 1],
+          zone,
+          zones,
+          rivers,
+          footprints,
+          params,
+        )
+      ) {
+        return;
+      }
+    }
+
+    chunks.push(chunk.map(clonePoint));
+  }
+
+  private getPathEndpointNodes(paths: readonly GeneratedInternalPathObject[]): CirculationNode[] {
+    return paths.flatMap((path) => [
+      { point: path.points[0], weight: 0 },
+      { point: path.points[path.points.length - 1], weight: 0 },
+    ]);
+  }
+
+  private getPlacementAxisAngle(placements: readonly GeneratedPlacement[]): number {
+    if (placements.length < 2) {
+      return 0;
+    }
+
+    let bestStart = placements[0].position;
+    let bestEnd = placements[1].position;
+    let bestDistance = 0;
+
+    for (let first = 0; first < placements.length; first += 1) {
+      for (let second = first + 1; second < placements.length; second += 1) {
+        const distance = this.distance(placements[first].position, placements[second].position);
+
+        if (distance > bestDistance) {
+          bestStart = placements[first].position;
+          bestEnd = placements[second].position;
+          bestDistance = distance;
+        }
+      }
+    }
+
+    return Math.atan2(bestEnd.y - bestStart.y, bestEnd.x - bestStart.x);
   }
 
   private appendNonOverlappingPaths(
@@ -818,6 +1232,200 @@ export class MapGeneratorService {
   ): boolean {
     return roads.every(
       (road) => this.distanceToPolyline(point, road.points) > road.width / 2 + clearance,
+    );
+  }
+
+  private getPlacementFootprints(
+    placements: readonly GeneratedPlacement[],
+    pathWidth: number,
+  ): PlacementFootprint[] {
+    return placements.map((placement) => ({
+      position: placement.position,
+      radius: Math.min(placement.width, placement.height) / 2 + pathWidth / 2 + 2,
+    }));
+  }
+
+  private isPointClearOfFootprints(
+    point: Point,
+    footprints: readonly PlacementFootprint[],
+  ): boolean {
+    return footprints.every(
+      (footprint) => this.distance(point, footprint.position) > footprint.radius,
+    );
+  }
+
+  private isInternalPathPointValid(
+    point: Point,
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    footprints: readonly PlacementFootprint[],
+    params: LayoutParams,
+  ): boolean {
+    return (
+      this.isEligibleZonePoint(point, zone, zones, rivers, params.waterClearance) &&
+      this.isPointClearOfFootprints(point, footprints)
+    );
+  }
+
+  private isSampledSegmentValid(
+    start: Point,
+    end: Point,
+    isPointValid: (point: Point) => boolean,
+    step: number,
+  ): boolean {
+    const length = this.distance(start, end);
+    const steps = Math.max(1, Math.ceil(length / step));
+
+    for (let index = 0; index <= steps; index += 1) {
+      const t = index / steps;
+
+      if (
+        !isPointValid({ x: start.x + (end.x - start.x) * t, y: start.y + (end.y - start.y) * t })
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private isInternalPathSegmentValid(
+    start: Point,
+    end: Point,
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    footprints: readonly PlacementFootprint[],
+    params: LayoutParams,
+  ): boolean {
+    return this.isSampledSegmentValid(
+      start,
+      end,
+      (point) => this.isInternalPathPointValid(point, zone, zones, rivers, footprints, params),
+      Math.max(6, params.pathWidth / 2),
+    );
+  }
+
+  private getPlacementCenter(placements: readonly GeneratedPlacement[]): Point | null {
+    if (placements.length === 0) {
+      return null;
+    }
+
+    const total = placements.reduce(
+      (sum, placement) => ({
+        x: sum.x + placement.position.x,
+        y: sum.y + placement.position.y,
+      }),
+      { x: 0, y: 0 },
+    );
+
+    return { x: total.x / placements.length, y: total.y / placements.length };
+  }
+
+  private getNearestDistrictRoadGuide(
+    placements: readonly GeneratedPlacement[],
+    bounds: Bounds,
+    roads: readonly GeneratedRoadObject[],
+  ): RoadGuide | null {
+    const boundsCenter = this.getBoundsCenter(bounds);
+    const placementCenter = this.getPlacementCenter(placements);
+    const anchors = [
+      boundsCenter,
+      ...(placementCenter ? [placementCenter] : []),
+      ...placements.map((placement) => placement.position),
+    ];
+    let nearest: RoadGuide | null = null;
+
+    for (const road of roads) {
+      for (let index = 0; index < road.points.length - 1; index += 1) {
+        const start = road.points[index];
+        const end = road.points[index + 1];
+        const angle = Math.atan2(end.y - start.y, end.x - start.x);
+
+        for (const anchor of anchors) {
+          const closest = this.closestPointOnSegment(anchor, start, end);
+          const distance = this.distance(anchor, closest);
+
+          if (!nearest || distance < nearest.distance) {
+            nearest = { point: closest, distance, angle, width: road.width };
+          }
+        }
+      }
+    }
+
+    return nearest;
+  }
+
+  private getRoadAccessRange(params: LayoutParams): number {
+    return Math.max(150, params.pathSpacing * 2.6);
+  }
+
+  private createRoadAccessConnector(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    footprints: readonly PlacementFootprint[],
+    params: LayoutParams,
+    pathType: GeneratedInternalPathObject['pathType'],
+    guide: RoadGuide,
+    nodes: readonly CirculationNode[],
+    index: number,
+  ): GeneratedInternalPathObject | null {
+    const sortedNodes = [...nodes].sort(
+      (first, second) =>
+        this.distance(first.point, guide.point) - this.distance(second.point, guide.point),
+    );
+
+    for (const node of sortedNodes) {
+      if (
+        !this.isRoadAccessSegmentValid(
+          guide.point,
+          node.point,
+          zone,
+          zones,
+          rivers,
+          footprints,
+          params,
+        )
+      ) {
+        continue;
+      }
+
+      return {
+        id: `generated-${zone.object.id}-${pathType}-road-access-${index}`,
+        type: 'generated-internal-path',
+        points: [clonePoint(guide.point), clonePoint(node.point)],
+        width: params.pathWidth,
+        pathType,
+      };
+    }
+
+    return null;
+  }
+
+  private isRoadAccessSegmentValid(
+    roadPoint: Point,
+    internalPoint: Point,
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    rivers: readonly IndexedRiver[],
+    footprints: readonly PlacementFootprint[],
+    params: LayoutParams,
+  ): boolean {
+    if (this.isSegmentBlockedByRivers(roadPoint, internalPoint, rivers, params.waterClearance)) {
+      return false;
+    }
+
+    const outsideAllowance = this.getRoadAccessRange(params);
+
+    return this.isSampledSegmentValid(
+      roadPoint,
+      internalPoint,
+      (point) =>
+        this.isEligibleZonePoint(point, zone, zones, rivers, params.waterClearance) ||
+        this.distance(point, roadPoint) <= outsideAllowance,
+      Math.max(6, params.pathWidth / 2),
     );
   }
 
