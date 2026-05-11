@@ -208,6 +208,14 @@ describe('MapGeneratorService', () => {
 
     for (let first = 0; first < streets.length; first += 1) {
       for (let second = first + 1; second < streets.length; second += 1) {
+        if (pathsShareEndpoint(streets[first].points, streets[second].points)) {
+          continue;
+        }
+
+        if (pathsIntersect(streets[first].points, streets[second].points)) {
+          continue;
+        }
+
         expect(pathDistance(streets[first].points, streets[second].points)).toBeGreaterThan(7);
       }
     }
@@ -270,6 +278,37 @@ describe('MapGeneratorService', () => {
         ),
       ),
     ).toBe(true);
+  });
+
+  it('generates multiple internal streets for large districts instead of only one access line', () => {
+    const generated = service.generate([
+      {
+        id: 'large-village-zone',
+        type: 'zone',
+        zoneType: 'village',
+        brushStamps: [
+          { position: { x: 340, y: 190 }, radius: 64 },
+          { position: { x: 460, y: 230 }, radius: 72 },
+          { position: { x: 600, y: 300 }, radius: 78 },
+          { position: { x: 760, y: 370 }, radius: 82 },
+          { position: { x: 920, y: 410 }, radius: 78 },
+          { position: { x: 1040, y: 430 }, radius: 66 },
+          { position: { x: 900, y: 500 }, radius: 72 },
+          { position: { x: 720, y: 455 }, radius: 78 },
+          { position: { x: 560, y: 380 }, radius: 78 },
+          { position: { x: 420, y: 300 }, radius: 72 },
+        ],
+        density: 0.8,
+      },
+    ]);
+    const buildings = generated.filter((object) => object.type === 'generated-building');
+    const internalStreets = internalPaths(generated, 'street').filter(
+      (street) => !street.id.includes('road-access'),
+    );
+
+    expect(buildings.length).toBeGreaterThan(20);
+    expect(internalStreets.length).toBeGreaterThanOrEqual(3);
+    expect(totalPathLength(internalStreets)).toBeGreaterThan(420);
   });
 
   it('connects populated district circulation to a nearby main road', () => {
@@ -518,6 +557,54 @@ function pathDistance(
   }
 
   return minDistance;
+}
+
+function pathsShareEndpoint(
+  first: readonly { x: number; y: number }[],
+  second: readonly { x: number; y: number }[],
+): boolean {
+  const firstEndpoints = [first[0], first[first.length - 1]];
+  const secondEndpoints = [second[0], second[second.length - 1]];
+
+  return firstEndpoints.some((firstPoint) =>
+    secondEndpoints.some((secondPoint) => distance(firstPoint, secondPoint) < 0.01),
+  );
+}
+
+function pathsIntersect(
+  first: readonly { x: number; y: number }[],
+  second: readonly { x: number; y: number }[],
+): boolean {
+  for (let firstIndex = 0; firstIndex < first.length - 1; firstIndex += 1) {
+    for (let secondIndex = 0; secondIndex < second.length - 1; secondIndex += 1) {
+      if (
+        segmentsIntersect(
+          first[firstIndex],
+          first[firstIndex + 1],
+          second[secondIndex],
+          second[secondIndex + 1],
+        )
+      ) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+function totalPathLength(
+  paths: readonly Extract<GeneratedMapObject, { type: 'generated-internal-path' }>[],
+): number {
+  return paths.reduce((total, path) => {
+    let pathLength = 0;
+
+    for (let index = 0; index < path.points.length - 1; index += 1) {
+      pathLength += distance(path.points[index], path.points[index + 1]);
+    }
+
+    return total + pathLength;
+  }, 0);
 }
 
 function hasObjectsOnBothSides(

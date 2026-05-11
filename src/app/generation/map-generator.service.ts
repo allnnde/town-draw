@@ -285,7 +285,7 @@ export class MapGeneratorService {
       }));
     }
 
-    const placements = this.getOrganicPlacements(
+    let placements = this.getOrganicPlacements(
       zone,
       zones,
       rivers,
@@ -295,6 +295,7 @@ export class MapGeneratorService {
       [],
     );
     const paths = this.generateObjectAwarePaths(zone, zones, rivers, roads, params, placements);
+    placements = this.getPlacementsClearOfPaths(placements, paths);
 
     switch (zone.object.zoneType) {
       case 'village':
@@ -522,7 +523,8 @@ export class MapGeneratorService {
       `${zone.object.id}:${zone.index}:${zone.object.zoneType}:object-aware-paths`,
     );
     const pathType = this.getPathType(zone.object.zoneType);
-    const footprints = this.getPlacementFootprints(placements, params.pathWidth);
+    const footprints: PlacementFootprint[] = [];
+    const desiredPathCount = this.getDesiredDistrictPathCount(bounds, params, placements.length);
     const nodes = this.getCirculationNodes(
       zone,
       zones,
@@ -532,7 +534,7 @@ export class MapGeneratorService {
       placements,
       footprints,
     );
-    const maxEdges = Math.max(1, params.maxMainPaths + params.maxBranches);
+    const maxEdges = Math.max(desiredPathCount, params.maxMainPaths + params.maxBranches);
     const edges = this.getCirculationEdges(
       zone,
       zones,
@@ -562,21 +564,24 @@ export class MapGeneratorService {
       }
     }
 
-    if (paths.length === 0) {
-      paths.push(
-        ...this.createObjectAwareAxisPaths(
-          zone,
-          zones,
-          rivers,
-          bounds,
-          footprints,
-          params,
-          pathType,
-          placements,
-          random,
-          paths.length,
-        ),
-      );
+    if (paths.length < desiredPathCount) {
+      for (const axisPath of this.createObjectAwareAxisPaths(
+        zone,
+        zones,
+        rivers,
+        bounds,
+        footprints,
+        params,
+        pathType,
+        placements,
+        random,
+        paths.length,
+        desiredPathCount - paths.length,
+      )) {
+        if (this.isPathFarEnoughFromExisting(paths, axisPath, params.pathWidth * 0.8)) {
+          paths.push(axisPath);
+        }
+      }
     }
 
     const roadGuide = this.getNearestDistrictRoadGuide(placements, bounds, roads);
@@ -786,6 +791,17 @@ export class MapGeneratorService {
     );
   }
 
+  private getDesiredDistrictPathCount(
+    bounds: Bounds,
+    params: LayoutParams,
+    placementCount: number,
+  ): number {
+    const sizeCount = Math.floor(this.getBoundsDiagonal(bounds) / Math.max(1, params.pathSpacing));
+    const objectCount = Math.floor(placementCount / 9);
+
+    return Math.max(1, Math.min(params.maxMainPaths + params.maxBranches, sizeCount, objectCount));
+  }
+
   private createObjectAwareAxisPaths(
     zone: IndexedZone,
     zones: readonly IndexedZone[],
@@ -797,6 +813,7 @@ export class MapGeneratorService {
     placements: readonly GeneratedPlacement[],
     random: () => number,
     startIndex: number,
+    maxPathCount: number,
   ): GeneratedInternalPathObject[] {
     const center = this.getPlacementCenter(placements) ?? this.getBoundsCenter(bounds);
     const angle = this.getPlacementAxisAngle(placements) + (random() - 0.5) * 0.25;
@@ -804,7 +821,15 @@ export class MapGeneratorService {
     const perpendicular = { x: -direction.y, y: direction.x };
     const halfLength = this.getBoundsDiagonal(bounds) / 2;
     const step = Math.max(10, params.pathWidth + 4);
-    const offsets = [0, -params.pathSpacing * 0.45, params.pathSpacing * 0.45];
+    const offsets = [
+      0,
+      -params.pathSpacing * 0.45,
+      params.pathSpacing * 0.45,
+      -params.pathSpacing * 0.9,
+      params.pathSpacing * 0.9,
+      -params.pathSpacing * 1.35,
+      params.pathSpacing * 1.35,
+    ];
     const chunks: Point[][] = [];
 
     for (const offset of offsets) {
@@ -826,12 +851,12 @@ export class MapGeneratorService {
 
       this.addObjectAwarePathChunk(chunks, chunk, zone, zones, rivers, footprints, params);
 
-      if (chunks.length >= Math.max(1, params.maxMainPaths)) {
+      if (chunks.length >= maxPathCount) {
         break;
       }
     }
 
-    return chunks.slice(0, Math.max(1, params.maxMainPaths)).map((points, index) => ({
+    return chunks.slice(0, maxPathCount).map((points, index) => ({
       id: `generated-${zone.object.id}-${pathType}-axis-${startIndex + index}`,
       type: 'generated-internal-path',
       points: points.map(clonePoint),
@@ -901,6 +926,23 @@ export class MapGeneratorService {
     }
 
     return Math.atan2(bestEnd.y - bestStart.y, bestEnd.x - bestStart.x);
+  }
+
+  private getPlacementsClearOfPaths(
+    placements: readonly GeneratedPlacement[],
+    paths: readonly GeneratedInternalPathObject[],
+  ): GeneratedPlacement[] {
+    if (paths.length === 0) {
+      return [...placements];
+    }
+
+    return placements.filter((placement) =>
+      paths.every(
+        (path) =>
+          this.distanceToPolyline(placement.position, path.points) >
+          Math.min(placement.width, placement.height) / 2 + path.width / 2 + 2,
+      ),
+    );
   }
 
   private appendNonOverlappingPaths(
