@@ -34,11 +34,22 @@ h1 {
 }
 
 .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   color: #8b5e34;
   font-size: 0.75rem;
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+.version-badge {
+  border: 1px solid rgba(139, 94, 52, 0.28);
+  border-radius: 999px;
+  background: rgba(139, 94, 52, 0.08);
+  padding: 0.12rem 0.42rem;
+  letter-spacing: 0.04em;
 }
 
 h1 {
