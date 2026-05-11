@@ -309,6 +309,10 @@ describe('MapGeneratorService', () => {
     expect(buildings.length).toBeGreaterThan(20);
     expect(internalStreets.length).toBeGreaterThanOrEqual(3);
     expect(totalPathLength(internalStreets)).toBeGreaterThan(420);
+    expect(
+      internalStreets.some((street) => hasObjectsOnBothSides(street.points, buildings, 95)),
+    ).toBe(true);
+    expect(pathsAreClearOfObjects(internalStreets, buildings)).toBe(true);
   });
 
   it('connects populated district circulation to a nearby main road', () => {
