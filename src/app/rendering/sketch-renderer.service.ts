@@ -8,7 +8,7 @@ import {
   SketchObject,
   ZoneSketch,
 } from '../map-model/sketch-object.model';
-import { getZoneBrushStamps, hasBrushCoverage } from '../map-model/zone-coverage.util';
+import { getZoneBrushStamps, getZoneCoveragePolygon } from '../map-model/zone-coverage.util';
 
 type GraphicsConstructor = new () => Graphics;
 
@@ -104,15 +104,30 @@ export class SketchRendererService {
     } as const;
     const graphics = new graphicsConstructor();
 
-    if (hasBrushCoverage(zone)) {
-      for (const stamp of getZoneBrushStamps(zone)) {
-        graphics.circle(
-          stamp.position.x,
-          stamp.position.y,
-          selected ? stamp.radius + 3 : stamp.radius,
-        );
-      }
+    const polygon = this.flattenPoints(getZoneCoveragePolygon(zone));
 
+    if (polygon.length > 0) {
+      graphics.poly(polygon, true);
+      graphics.fill({ color: colors[zone.zoneType], alpha: selected ? 0.38 : 0.22 });
+      graphics.stroke({
+        width: selected ? 5 : 2,
+        color: selected ? 0xfacc15 : colors[zone.zoneType],
+        alpha: 0.95,
+        join: 'round',
+      });
+
+      return graphics;
+    }
+
+    for (const stamp of getZoneBrushStamps(zone)) {
+      graphics.circle(
+        stamp.position.x,
+        stamp.position.y,
+        selected ? stamp.radius + 3 : stamp.radius,
+      );
+    }
+
+    if (getZoneBrushStamps(zone).length > 0) {
       graphics.fill({ color: colors[zone.zoneType], alpha: selected ? 0.34 : 0.2 });
       graphics.stroke({
         width: selected ? 4 : 1,
@@ -122,21 +137,6 @@ export class SketchRendererService {
 
       return graphics;
     }
-
-    const polygon = this.flattenPoints(zone.polygon ?? []);
-
-    if (polygon.length === 0) {
-      return graphics;
-    }
-
-    graphics.poly(polygon, true);
-    graphics.fill({ color: colors[zone.zoneType], alpha: selected ? 0.38 : 0.22 });
-    graphics.stroke({
-      width: selected ? 5 : 2,
-      color: selected ? 0xfacc15 : colors[zone.zoneType],
-      alpha: 0.95,
-      join: 'round',
-    });
 
     return graphics;
   }

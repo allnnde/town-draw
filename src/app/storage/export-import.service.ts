@@ -2,7 +2,8 @@ import { Injectable } from '@angular/core';
 import { GeneratedMapObject } from '../map-model/generated-object.model';
 import { MapProject } from '../map-model/map-project.model';
 import { Point } from '../map-model/point.model';
-import { SketchObject } from '../map-model/sketch-object.model';
+import { SketchObject, ZoneSketch } from '../map-model/sketch-object.model';
+import { deriveZonePolygonFromBrushStamps } from '../map-model/brush-zone-polygon.util';
 
 @Injectable({ providedIn: 'root' })
 export class ExportImportService {
@@ -24,7 +25,16 @@ export class ExportImportService {
       throw new Error('El archivo no tiene el formato de proyecto TownDraw esperado.');
     }
 
-    return parsed;
+    const normalized = parsed.sketchObjects.map((object) =>
+      this.normalizeSketchObject(object, parsed.width, parsed.height),
+    );
+    const hasCoverageMigration = normalized.some((result) => result.changed);
+
+    return {
+      ...parsed,
+      sketchObjects: normalized.map((result) => result.object),
+      generatedObjects: hasCoverageMigration ? [] : parsed.generatedObjects,
+    };
   }
 
   private toFileName(name: string): string {
@@ -158,12 +168,64 @@ export class ExportImportService {
     return this.isRecord(value) && typeof value['x'] === 'number' && typeof value['y'] === 'number';
   }
 
+  private normalizeSketchObject(
+    object: SketchObject,
+    mapWidth: number,
+    mapHeight: number,
+  ): { object: SketchObject; changed: boolean } {
+    if (object.type !== 'zone') {
+      return { object, changed: false };
+    }
+
+    return this.normalizeZoneCoverage(object, mapWidth, mapHeight);
+  }
+
+  private normalizeZoneCoverage(
+    zone: ZoneSketch,
+    mapWidth: number,
+    mapHeight: number,
+  ): { object: ZoneSketch; changed: boolean } {
+    const sourcePolygon =
+      zone.polygon && zone.polygon.length >= 3
+        ? zone.polygon
+        : deriveZonePolygonFromBrushStamps(zone.brushStamps ?? []);
+    const polygon = sourcePolygon.map((point) => this.clampPointToMap(point, mapWidth, mapHeight));
+    const changed =
+      zone.brushStamps !== undefined ||
+      sourcePolygon !== zone.polygon ||
+      polygon.some(
+        (point, index) => point.x !== sourcePolygon[index].x || point.y !== sourcePolygon[index].y,
+      );
+
+    return {
+      object: {
+        id: zone.id,
+        type: 'zone',
+        zoneType: zone.zoneType,
+        polygon,
+        density: zone.density,
+      },
+      changed,
+    };
+  }
+
+  private clampPointToMap(point: Point, mapWidth: number, mapHeight: number): Point {
+    return {
+      x: Math.max(0, Math.min(mapWidth, point.x)),
+      y: Math.max(0, Math.min(mapHeight, point.y)),
+    };
+  }
+
   private hasValidZoneCoverage(value: Record<string, unknown>): boolean {
     const polygon = value['polygon'];
     const brushStamps = value['brushStamps'];
-    const hasPolygon = Array.isArray(polygon) && polygon.every((point) => this.isPoint(point));
+    const hasPolygon =
+      Array.isArray(polygon) &&
+      polygon.length >= 3 &&
+      polygon.every((point) => this.isPoint(point));
     const hasBrushStamps =
       Array.isArray(brushStamps) &&
+      brushStamps.length > 0 &&
       brushStamps.every(
         (stamp) =>
           this.isRecord(stamp) &&

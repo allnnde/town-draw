@@ -49,4 +49,23 @@ describe('SketchHitTestingService', () => {
     expect(service.findObjectAt({ x: 20, y: 20 }, [zone])?.id).toBe('zone-legacy');
     expect(service.findObjectAt({ x: 60, y: 20 }, [zone])).toBeNull();
   });
+
+  it('uses polygon coverage before retained brush stamps for completed zones', () => {
+    const zone: SketchObject = {
+      id: 'zone-polygon-first',
+      type: 'zone',
+      zoneType: 'market',
+      polygon: [
+        { x: 0, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 40 },
+        { x: 0, y: 40 },
+      ],
+      brushStamps: [{ position: { x: 200, y: 200 }, radius: 80 }],
+      density: 0.5,
+    };
+
+    expect(service.findObjectAt({ x: 20, y: 20 }, [zone])?.id).toBe('zone-polygon-first');
+    expect(service.findObjectAt({ x: 200, y: 200 }, [zone])).toBeNull();
+  });
 });

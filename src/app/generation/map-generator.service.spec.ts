@@ -30,6 +30,85 @@ describe('MapGeneratorService', () => {
     expect(countType(generated, 'generated-tree')).toBeGreaterThan(0);
   });
 
+  it('uses polygon coverage without multiplying generated content by retained stamp count', () => {
+    const polygon = [
+      { x: 0, y: 0 },
+      { x: 240, y: 0 },
+      { x: 240, y: 180 },
+      { x: 0, y: 180 },
+    ];
+    const polygonOnly = service.generate([
+      {
+        id: 'forest-zone',
+        type: 'zone',
+        zoneType: 'forest',
+        polygon,
+        density: 0.8,
+      },
+    ]);
+    const polygonWithDenseStamps = service.generate([
+      {
+        id: 'forest-zone',
+        type: 'zone',
+        zoneType: 'forest',
+        polygon,
+        brushStamps: Array.from({ length: 1000 }, () => ({
+          position: { x: 120, y: 90 },
+          radius: 60,
+        })),
+        density: 0.8,
+      },
+    ]);
+
+    expect(countType(polygonOnly, 'generated-tree')).toBeGreaterThan(0);
+    expect(polygonWithDenseStamps).toEqual(polygonOnly);
+  });
+
+  it('plans earlier zone content from effective non-overwritten coverage', () => {
+    const generated = service.generate([
+      {
+        id: 'earlier-village',
+        type: 'zone',
+        zoneType: 'village',
+        polygon: [
+          { x: 0, y: 0 },
+          { x: 420, y: 0 },
+          { x: 420, y: 320 },
+          { x: 0, y: 320 },
+        ],
+        density: 1,
+      },
+      {
+        id: 'later-market',
+        type: 'zone',
+        zoneType: 'market',
+        polygon: [
+          { x: 190, y: 0 },
+          { x: 420, y: 0 },
+          { x: 420, y: 320 },
+          { x: 190, y: 320 },
+        ],
+        density: 1,
+      },
+    ]);
+    const villageObjects = generated.filter((object) =>
+      object.id.startsWith('generated-earlier-village'),
+    );
+    const villagePaths = internalPaths(generated, 'street').filter((path) =>
+      path.id.startsWith('generated-earlier-village'),
+    );
+
+    expect(villageObjects.length).toBeGreaterThan(0);
+    expect(
+      villageObjects.every((object) =>
+        object.type === 'generated-internal-path'
+          ? object.points.every((point) => point.x < 210)
+          : 'position' in object && object.position.x < 210,
+      ),
+    ).toBe(true);
+    expect(villagePaths.every((path) => path.points.every((point) => point.x < 210))).toBe(true);
+  });
+
   it('does not place zone-generated content over rivers', () => {
     const sketchObjects: SketchObject[] = [
       {

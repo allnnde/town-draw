@@ -11,8 +11,9 @@ import {
 import {
   Bounds,
   getZoneBounds,
-  getZoneBrushStamps,
+  getZoneCoverageArea,
   getZoneCoverageCenter,
+  getZoneCoveragePolygon,
   isPointInZoneCoverage,
 } from '../map-model/zone-coverage.util';
 
@@ -264,14 +265,14 @@ export class MapGeneratorService {
     rivers: readonly IndexedRiver[],
     roads: readonly GeneratedRoadObject[],
   ): GeneratedMapObject[] {
-    const bounds = getZoneBounds(zone.object);
+    const bounds = this.getEffectiveZoneBounds(zone, zones);
 
     if (!bounds) {
       return [];
     }
 
     const params = LAYOUT_PARAMS[zone.object.zoneType];
-    const area = Math.max(1, (bounds.maxX - bounds.minX) * (bounds.maxY - bounds.minY));
+    const area = Math.max(1, this.getEffectiveZoneArea(zone, zones, bounds));
 
     if (zone.object.zoneType === 'forest') {
       return this.getOrganicPlacements(
@@ -355,7 +356,7 @@ export class MapGeneratorService {
     params: LayoutParams,
     blockedPaths: readonly GeneratedInternalPathObject[],
   ): GeneratedPlacement[] {
-    const bounds = getZoneBounds(zone.object);
+    const bounds = this.getEffectiveZoneBounds(zone, zones);
 
     if (!bounds) {
       return [];
@@ -412,7 +413,7 @@ export class MapGeneratorService {
     params: LayoutParams,
     plannedObjectCount: number,
   ): GeneratedInternalPathObject[] {
-    const bounds = getZoneBounds(zone.object);
+    const bounds = this.getEffectiveZoneBounds(zone, zones);
 
     if (!bounds || params.maxMainPaths === 0) {
       return [];
@@ -521,9 +522,9 @@ export class MapGeneratorService {
       return fallback;
     }
 
-    for (const stamp of getZoneBrushStamps(zone.object)) {
-      if (this.isEligibleZonePoint(stamp.position, zone, zones, rivers, params.waterClearance)) {
-        return stamp.position;
+    for (const point of getZoneCoveragePolygon(zone.object)) {
+      if (this.isEligibleZonePoint(point, zone, zones, rivers, params.waterClearance)) {
+        return point;
       }
     }
 
@@ -531,20 +532,20 @@ export class MapGeneratorService {
   }
 
   private getDistrictAxisAngle(zone: ZoneSketch, bounds: Bounds, random: () => number): number {
-    const stamps = getZoneBrushStamps(zone);
+    const points = getZoneCoveragePolygon(zone);
 
-    if (stamps.length >= 2) {
-      let bestStart = stamps[0].position;
-      let bestEnd = stamps[1].position;
+    if (points.length >= 2) {
+      let bestStart = points[0];
+      let bestEnd = points[1];
       let bestDistance = 0;
 
-      for (let first = 0; first < stamps.length; first += 1) {
-        for (let second = first + 1; second < stamps.length; second += 1) {
-          const distance = this.distance(stamps[first].position, stamps[second].position);
+      for (let first = 0; first < points.length; first += 1) {
+        for (let second = first + 1; second < points.length; second += 1) {
+          const distance = this.distance(points[first], points[second]);
 
           if (distance > bestDistance) {
-            bestStart = stamps[first].position;
-            bestEnd = stamps[second].position;
+            bestStart = points[first];
+            bestEnd = points[second];
             bestDistance = distance;
           }
         }
@@ -704,7 +705,7 @@ export class MapGeneratorService {
     params: LayoutParams,
     placements: readonly GeneratedPlacement[],
   ): GeneratedInternalPathObject[] {
-    const bounds = getZoneBounds(zone.object);
+    const bounds = this.getEffectiveZoneBounds(zone, zones);
 
     if (!bounds || params.maxMainPaths === 0 || placements.length === 0) {
       return [];
@@ -988,7 +989,7 @@ export class MapGeneratorService {
     placementCount: number,
   ): number {
     const sizeCount = Math.floor(this.getBoundsDiagonal(bounds) / Math.max(1, params.pathSpacing));
-    const objectCount = Math.floor(placementCount / 9);
+    const objectCount = Math.ceil(placementCount / 4);
 
     return Math.max(1, Math.min(params.maxMainPaths + params.maxBranches, sizeCount, objectCount));
   }
@@ -1289,6 +1290,84 @@ export class MapGeneratorService {
     }
 
     return winner;
+  }
+
+  private getEffectiveZoneBounds(zone: IndexedZone, zones: readonly IndexedZone[]): Bounds | null {
+    const bounds = getZoneBounds(zone.object);
+
+    if (!bounds) {
+      return null;
+    }
+
+    const points = this.getEffectiveZoneSamples(zone, zones, bounds);
+
+    return points.length > 0 ? this.getPointBounds(points) : null;
+  }
+
+  private getEffectiveZoneArea(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    bounds: Bounds,
+  ): number {
+    const step = this.getEffectiveZoneSampleStep(bounds);
+    let sampleCount = 0;
+
+    for (let x = bounds.minX + step / 2; x <= bounds.maxX; x += step) {
+      for (let y = bounds.minY + step / 2; y <= bounds.maxY; y += step) {
+        if (this.getEffectiveZoneAt({ x, y }, zones)?.object.id === zone.object.id) {
+          sampleCount += 1;
+        }
+      }
+    }
+
+    return sampleCount > 0 ? sampleCount * step * step : getZoneCoverageArea(zone.object);
+  }
+
+  private getEffectiveZoneSamples(
+    zone: IndexedZone,
+    zones: readonly IndexedZone[],
+    bounds: Bounds,
+  ): Point[] {
+    const points: Point[] = [];
+    const step = this.getEffectiveZoneSampleStep(bounds);
+    const addPoint = (point: Point): void => {
+      if (this.getEffectiveZoneAt(point, zones)?.object.id === zone.object.id) {
+        points.push(clonePoint(point));
+      }
+    };
+
+    for (let x = bounds.minX + step / 2; x <= bounds.maxX; x += step) {
+      for (let y = bounds.minY + step / 2; y <= bounds.maxY; y += step) {
+        addPoint({ x, y });
+      }
+    }
+
+    for (const point of getZoneCoveragePolygon(zone.object)) {
+      addPoint(point);
+    }
+
+    return points;
+  }
+
+  private getEffectiveZoneSampleStep(bounds: Bounds): number {
+    return Math.max(12, Math.min(28, this.getBoundsDiagonal(bounds) / 36));
+  }
+
+  private getPointBounds(points: readonly Point[]): Bounds {
+    return points.reduce<Bounds>(
+      (bounds, point) => ({
+        minX: Math.min(bounds.minX, point.x),
+        minY: Math.min(bounds.minY, point.y),
+        maxX: Math.max(bounds.maxX, point.x),
+        maxY: Math.max(bounds.maxY, point.y),
+      }),
+      {
+        minX: Number.POSITIVE_INFINITY,
+        minY: Number.POSITIVE_INFINITY,
+        maxX: Number.NEGATIVE_INFINITY,
+        maxY: Number.NEGATIVE_INFINITY,
+      },
+    );
   }
 
   private addPathChunk(
