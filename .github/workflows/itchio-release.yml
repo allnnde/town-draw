@@ -114,6 +114,18 @@ jobs:
       - name: Build Angular app for itch.io
         run: npm run build -- --base-href ./
 
+      - name: Verify built app version
+        run: |
+          release_version="${{ needs.versioning.outputs.tag }}"
+          release_version="${release_version#v}"
+
+          if ! grep -R "$release_version" dist/town-draw/browser >/dev/null; then
+            echo "Built app does not contain release version $release_version"
+            exit 1
+          fi
+
+          echo "Built app contains release version $release_version"
+
       - name: Setup Butler
         uses: remarkablegames/setup-butler@v3
 
