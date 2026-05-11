@@ -285,17 +285,17 @@ export class MapGeneratorService {
       }));
     }
 
-    let placements = this.getOrganicPlacements(
+    const plannedCount = this.getCount(area, zone.object.density, params);
+    const paths = this.generateOrganicPaths(zone, zones, rivers, roads, params, plannedCount);
+    const placements = this.getOrganicPlacements(
       zone,
       zones,
       rivers,
       roads,
-      this.getCount(area, zone.object.density, params),
+      plannedCount,
       params,
-      [],
+      paths,
     );
-    const paths = this.generateObjectAwarePaths(zone, zones, rivers, roads, params, placements);
-    placements = this.getPlacementsClearOfPaths(placements, paths);
 
     switch (zone.object.zoneType) {
       case 'village':
@@ -404,6 +404,7 @@ export class MapGeneratorService {
     rivers: readonly IndexedRiver[],
     roads: readonly GeneratedRoadObject[],
     params: LayoutParams,
+    plannedObjectCount: number,
   ): GeneratedInternalPathObject[] {
     const bounds = getZoneBounds(zone.object);
 
@@ -419,19 +420,10 @@ export class MapGeneratorService {
     const baseAngle = roadGuide && roadGuide.distance < 180 ? roadGuide.angle : random() * Math.PI;
     const paths: GeneratedInternalPathObject[] = [];
     const pathType = this.getPathType(zone.object.zoneType);
-    const pathCount = Math.max(
-      1,
-      Math.min(
-        params.maxMainPaths,
-        Math.floor(this.getBoundsDiagonal(bounds) / params.pathSpacing),
-      ),
-    );
+    const desiredPathCount = this.getDesiredDistrictPathCount(bounds, params, plannedObjectCount);
+    const pathCount = Math.min(params.maxMainPaths, desiredPathCount);
 
     for (let index = 0; index < pathCount; index += 1) {
-      if (index > 0 && random() < 0.25) {
-        continue;
-      }
-
       const angle = baseAngle + (index % 2 === 0 ? 0 : Math.PI / 2) + (random() - 0.5) * 0.75;
       const origin = this.offsetPoint(
         center,
@@ -457,8 +449,8 @@ export class MapGeneratorService {
       );
     }
 
-    for (let index = 0; index < params.maxBranches; index += 1) {
-      if (paths.length === 0 || random() < 0.36) {
+    for (let index = 0; index < params.maxBranches && paths.length < desiredPathCount; index += 1) {
+      if (paths.length === 0) {
         continue;
       }
 
@@ -485,21 +477,22 @@ export class MapGeneratorService {
       );
     }
 
-    if (roadGuide && roadGuide.distance < 150) {
-      this.appendNonOverlappingPaths(
-        paths,
-        this.createRoadAccessPath(
-          zone,
-          zones,
-          rivers,
-          roadGuide,
-          center,
-          params,
-          pathType,
-          paths.length,
-        ),
-        params.pathWidth,
+    if (roadGuide && roadGuide.distance <= this.getRoadAccessRange(params)) {
+      const accessPath = this.createRoadAccessConnector(
+        zone,
+        zones,
+        rivers,
+        [],
+        params,
+        pathType,
+        roadGuide,
+        paths.length > 0 ? this.getPathEndpointNodes(paths) : [{ point: center, weight: 0 }],
+        paths.length,
       );
+
+      if (accessPath) {
+        paths.push(accessPath);
+      }
     }
 
     return paths;
