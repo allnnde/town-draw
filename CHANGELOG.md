@@ -1,3 +1,7 @@
+## [0.0.6](https://github.com/allnnde/town-draw/compare/v0.0.5...v0.0.6) (2026-05-11)
+
+
+
 ## [0.0.5](https://github.com/allnnde/town-draw/compare/v0.0.4...v0.0.5) (2026-05-11)
 
 
@@ -11,10 +15,6 @@
 
 
 ## [0.0.2](https://github.com/allnnde/town-draw/compare/v0.0.1...v0.0.2) (2026-05-11)
-
-
-
-## 0.0.1 (2026-05-10)
 
 
 
