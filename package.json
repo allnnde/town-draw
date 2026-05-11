@@ -3,7 +3,6 @@
   "version": "0.0.4",
   "scripts": {
     "ng": "ng",
-    "prebuild": "node scripts/write-app-version.mjs",
     "start": "ng serve",
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
