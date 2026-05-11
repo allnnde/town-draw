@@ -244,6 +244,138 @@ describe('MapGeneratorService', () => {
     ).toBe(true);
   });
 
+  it('routes village streets through gaps between generated buildings', () => {
+    const generated = service.generate([
+      {
+        id: 'village-zone',
+        type: 'zone',
+        zoneType: 'village',
+        brushStamps: [{ position: { x: 260, y: 220 }, radius: 190 }],
+        density: 1,
+      },
+    ]);
+    const buildings = generated.filter((object) => object.type === 'generated-building');
+    const streets = internalPaths(generated, 'street');
+
+    expect(streets.length).toBeGreaterThan(0);
+    expect(streets.some((street) => hasObjectsOnBothSides(street.points, buildings, 86))).toBe(
+      true,
+    );
+    expect(
+      streets.every((street) =>
+        buildings.every(
+          (building) =>
+            distanceToPolyline(building.position, street.points) >
+            Math.min(building.width, building.height) / 2 + street.width / 2,
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('connects populated district circulation to a nearby main road', () => {
+    const generated = service.generate([
+      {
+        id: 'main-road',
+        type: 'road',
+        points: [
+          { x: 40, y: 64 },
+          { x: 380, y: 64 },
+        ],
+        roadType: 'main',
+      },
+      {
+        id: 'village-zone',
+        type: 'zone',
+        zoneType: 'village',
+        brushStamps: [{ position: { x: 210, y: 205 }, radius: 118 }],
+        density: 1,
+      },
+    ]);
+    const roads = generated.filter((object) => object.type === 'generated-road');
+    const streets = internalPaths(generated, 'street');
+
+    expect(roads.length).toBeGreaterThan(0);
+    expect(
+      streets.some((street) =>
+        street.points.some((point) =>
+          roads.some((road) => distanceToPolyline(point, road.points) <= road.width / 2 + 1),
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not force district road access across a river blocker', () => {
+    const generated = service.generate([
+      {
+        id: 'main-road',
+        type: 'road',
+        points: [
+          { x: 40, y: 46 },
+          { x: 380, y: 46 },
+        ],
+        roadType: 'main',
+      },
+      {
+        id: 'river-1',
+        type: 'river',
+        points: [
+          { x: 40, y: 104 },
+          { x: 380, y: 104 },
+        ],
+        width: 32,
+      },
+      {
+        id: 'village-zone',
+        type: 'zone',
+        zoneType: 'village',
+        brushStamps: [{ position: { x: 210, y: 222 }, radius: 112 }],
+        density: 1,
+      },
+    ]);
+    const roads = generated.filter((object) => object.type === 'generated-road');
+    const streets = internalPaths(generated, 'street');
+
+    expect(
+      streets.some((street) =>
+        street.points.some((point) =>
+          roads.some((road) => distanceToPolyline(point, road.points) <= road.width / 2 + 1),
+        ),
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps market aisles and industrial service roads clear of generated objects', () => {
+    const market = service.generate([
+      {
+        id: 'market-zone',
+        type: 'zone',
+        zoneType: 'market',
+        brushStamps: [{ position: { x: 220, y: 220 }, radius: 170 }],
+        density: 1,
+      },
+    ]);
+    const industrial = service.generate([
+      {
+        id: 'industrial-zone',
+        type: 'zone',
+        zoneType: 'industrial',
+        brushStamps: [{ position: { x: 260, y: 240 }, radius: 190 }],
+        density: 1,
+      },
+    ]);
+    const stalls = market.filter((object) => object.type === 'generated-market-stall');
+    const aisles = internalPaths(market, 'aisle');
+    const structures = industrial.filter(
+      (object) => object.type === 'generated-industrial-structure',
+    );
+    const serviceRoads = internalPaths(industrial, 'service-road');
+
+    expect(aisles.length).toBeGreaterThan(0);
+    expect(serviceRoads.length).toBeGreaterThan(0);
+    expect(pathsAreClearOfObjects(aisles, stalls)).toBe(true);
+    expect(pathsAreClearOfObjects(serviceRoads, structures)).toBe(true);
+  });
+
   it('creates bridges for roads drawn over water', () => {
     const generated = service.generate([
       {
@@ -303,6 +435,16 @@ function countType(
   type: GeneratedMapObject['type'],
 ): number {
   return generated.filter((object) => object.type === type).length;
+}
+
+function internalPaths(
+  generated: readonly GeneratedMapObject[],
+  pathType: Extract<GeneratedMapObject, { type: 'generated-internal-path' }>['pathType'],
+): Extract<GeneratedMapObject, { type: 'generated-internal-path' }>[] {
+  return generated.filter(
+    (object): object is Extract<GeneratedMapObject, { type: 'generated-internal-path' }> =>
+      object.type === 'generated-internal-path' && object.pathType === pathType,
+  );
 }
 
 function buildingsForZone(
@@ -376,6 +518,52 @@ function pathDistance(
   }
 
   return minDistance;
+}
+
+function hasObjectsOnBothSides(
+  path: readonly { x: number; y: number }[],
+  objects: readonly { position: { x: number; y: number } }[],
+  maxDistance: number,
+): boolean {
+  for (let index = 0; index < path.length - 1; index += 1) {
+    const start = path[index];
+    const end = path[index + 1];
+    let hasLeft = false;
+    let hasRight = false;
+
+    for (const object of objects) {
+      if (distanceToSegment(object.position, start, end) > maxDistance) {
+        continue;
+      }
+
+      const side = direction(start, end, object.position);
+
+      if (side > 0) {
+        hasLeft = true;
+      } else if (side < 0) {
+        hasRight = true;
+      }
+    }
+
+    if (hasLeft && hasRight) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function pathsAreClearOfObjects(
+  paths: readonly Extract<GeneratedMapObject, { type: 'generated-internal-path' }>[],
+  objects: readonly { position: { x: number; y: number }; width: number; height: number }[],
+): boolean {
+  return paths.every((path) =>
+    objects.every(
+      (object) =>
+        distanceToPolyline(object.position, path.points) >
+        Math.min(object.width, object.height) / 2 + path.width / 2,
+    ),
+  );
 }
 
 function distanceToPolyline(
