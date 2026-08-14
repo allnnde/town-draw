@@ -8,7 +8,8 @@ import {
   inject,
 } from '@angular/core';
 import type { Application, Container, FederatedPointerEvent, Graphics } from 'pixi.js';
-import type { GeneratedMapObject } from '../../../map-model/generated-object.model';
+import type { GeneratedMap } from '../../../map-model/generated-map.model';
+import { getGeneratedItemCount } from '../../../map-model/generated-map.model';
 import type { SketchObject } from '../../../map-model/sketch-object.model';
 import { GeneratedMapRendererService } from '../../../rendering/generated-map-renderer.service';
 import { SketchRendererService } from '../../../rendering/sketch-renderer.service';
@@ -40,12 +41,12 @@ export class PixiViewportComponent implements AfterViewInit, OnDestroy {
 
   constructor() {
     effect(() => {
-      const generatedObjects = this.state.generatedObjects();
+      const generatedMap = this.state.generatedMap();
       const sketchObjects = this.state.sketchObjects();
       const draftSketchObject = this.state.draftSketchObject();
       const selectedObjectId = this.state.selectedObjectId();
 
-      this.renderLayers(generatedObjects, sketchObjects, draftSketchObject, selectedObjectId);
+      this.renderLayers(generatedMap, sketchObjects, draftSketchObject, selectedObjectId);
     });
   }
 
@@ -119,7 +120,7 @@ export class PixiViewportComponent implements AfterViewInit, OnDestroy {
 
   private renderCurrentState(): void {
     this.renderLayers(
-      this.state.generatedObjects(),
+      this.state.generatedMap(),
       this.state.sketchObjects(),
       this.state.draftSketchObject(),
       this.state.selectedObjectId(),
@@ -127,7 +128,7 @@ export class PixiViewportComponent implements AfterViewInit, OnDestroy {
   }
 
   private renderLayers(
-    generatedObjects: readonly GeneratedMapObject[],
+    generatedMap: GeneratedMap,
     sketchObjects: readonly SketchObject[],
     draftSketchObject: SketchObject | null,
     selectedObjectId: string | null,
@@ -140,13 +141,13 @@ export class PixiViewportComponent implements AfterViewInit, OnDestroy {
       ? [...sketchObjects, draftSketchObject]
       : sketchObjects;
 
-    this.generatedRenderer.render(this.generatedLayer, this.graphicsConstructor, generatedObjects);
+    this.generatedRenderer.render(this.generatedLayer, this.graphicsConstructor, generatedMap);
     this.sketchRenderer.render(
       this.sketchLayer,
       this.graphicsConstructor,
       renderedSketchObjects,
       selectedObjectId,
-      generatedObjects.length > 0,
+      getGeneratedItemCount(generatedMap) > 0,
     );
     this.app?.render();
   }

@@ -1,8 +1,12 @@
 import { Injectable, signal } from '@angular/core';
 import { EditorTool } from '../../map-model/editor-tool.model';
-import { GeneratedMapObject } from '../../map-model/generated-object.model';
+import {
+  GeneratedMap,
+  cloneGeneratedMap,
+  emptyGeneratedMap,
+} from '../../map-model/generated-map.model';
 import { createId } from '../../map-model/id.util';
-import { MapProject } from '../../map-model/map-project.model';
+import { MAP_PROJECT_VERSION, MapProject } from '../../map-model/map-project.model';
 import { SketchObject } from '../../map-model/sketch-object.model';
 
 const DEFAULT_MAP_WIDTH = 1200;
@@ -14,7 +18,7 @@ export class EditorStateService {
   private readonly selectedObjectIdSignal = signal<string | null>(null);
   private readonly sketchObjectsSignal = signal<SketchObject[]>([]);
   private readonly draftSketchObjectSignal = signal<SketchObject | null>(null);
-  private readonly generatedObjectsSignal = signal<GeneratedMapObject[]>([]);
+  private readonly generatedMapSignal = signal<GeneratedMap>(emptyGeneratedMap());
   private readonly mapWidthSignal = signal(DEFAULT_MAP_WIDTH);
   private readonly mapHeightSignal = signal(DEFAULT_MAP_HEIGHT);
   private readonly projectIdSignal = signal(createId('project'));
@@ -25,7 +29,7 @@ export class EditorStateService {
   readonly selectedObjectId = this.selectedObjectIdSignal.asReadonly();
   readonly sketchObjects = this.sketchObjectsSignal.asReadonly();
   readonly draftSketchObject = this.draftSketchObjectSignal.asReadonly();
-  readonly generatedObjects = this.generatedObjectsSignal.asReadonly();
+  readonly generatedMap = this.generatedMapSignal.asReadonly();
   readonly mapWidth = this.mapWidthSignal.asReadonly();
   readonly mapHeight = this.mapHeightSignal.asReadonly();
 
@@ -53,7 +57,7 @@ export class EditorStateService {
   clearMap(): void {
     this.sketchObjectsSignal.set([]);
     this.draftSketchObjectSignal.set(null);
-    this.generatedObjectsSignal.set([]);
+    this.generatedMapSignal.set(emptyGeneratedMap());
     this.selectedObjectIdSignal.set(null);
   }
 
@@ -61,8 +65,12 @@ export class EditorStateService {
     this.draftSketchObjectSignal.set(object);
   }
 
-  setGeneratedObjects(objects: GeneratedMapObject[]): void {
-    this.generatedObjectsSignal.set([...objects]);
+  setGeneratedMap(map: GeneratedMap): void {
+    this.generatedMapSignal.set(cloneGeneratedMap(map));
+  }
+
+  clearGeneratedMap(): void {
+    this.generatedMapSignal.set(emptyGeneratedMap());
   }
 
   replaceProject(project: MapProject): void {
@@ -73,7 +81,7 @@ export class EditorStateService {
     this.mapHeightSignal.set(Math.max(1, project.height));
     this.sketchObjectsSignal.set([...project.sketchObjects]);
     this.draftSketchObjectSignal.set(null);
-    this.generatedObjectsSignal.set([...project.generatedObjects]);
+    this.generatedMapSignal.set(cloneGeneratedMap(project.generatedMap));
     this.selectedObjectIdSignal.set(null);
   }
 
@@ -81,11 +89,11 @@ export class EditorStateService {
     return {
       id: this.projectIdSignal(),
       name: this.projectNameSignal(),
-      version: 1,
+      version: MAP_PROJECT_VERSION,
       width: this.mapWidthSignal(),
       height: this.mapHeightSignal(),
       sketchObjects: [...this.sketchObjectsSignal()],
-      generatedObjects: [...this.generatedObjectsSignal()],
+      generatedMap: cloneGeneratedMap(this.generatedMapSignal()),
       createdAt: this.createdAtSignal(),
       updatedAt: new Date().toISOString(),
     };
