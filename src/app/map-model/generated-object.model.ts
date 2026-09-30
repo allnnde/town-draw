@@ -1,25 +1,15 @@
 import { Point } from './point.model';
 
-export type GeneratedMapObject =
+export type GeneratedNonRoadObject =
   | GeneratedRiver
-  | GeneratedRoad
   | GeneratedTree
   | GeneratedBuilding
   | GeneratedMarketStall
-  | GeneratedIndustrialStructure
-  | GeneratedInternalPath
-  | GeneratedBridge;
+  | GeneratedIndustrialStructure;
 
 export interface GeneratedRiver {
   id: string;
   type: 'generated-river';
-  points: Point[];
-  width: number;
-}
-
-export interface GeneratedRoad {
-  id: string;
-  type: 'generated-road';
   points: Point[];
   width: number;
 }
@@ -60,21 +50,4 @@ export interface GeneratedIndustrialStructure {
   height: number;
   rotation?: number;
   variant?: number;
-}
-
-export interface GeneratedInternalPath {
-  id: string;
-  type: 'generated-internal-path';
-  points: Point[];
-  width: number;
-  pathType: 'street' | 'aisle' | 'service-road';
-}
-
-export interface GeneratedBridge {
-  id: string;
-  type: 'generated-bridge';
-  position: Point;
-  width: number;
-  height: number;
-  angle: number;
 }

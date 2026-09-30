@@ -19,10 +19,18 @@ export class EditorPageComponent {
   private readonly generator = inject(MapGeneratorService);
   private readonly exportImport = inject(ExportImportService);
   importError = '';
+  generationError = '';
+  importNotice = '';
 
   generateMap(): void {
-    const generatedObjects = this.generator.generate(this.state.sketchObjects());
-    this.state.setGeneratedObjects(generatedObjects);
+    try {
+      const generatedMap = this.generator.generate(this.state.sketchObjects());
+      this.state.setGeneratedMap(generatedMap);
+      this.generationError = '';
+    } catch (error) {
+      this.generationError =
+        error instanceof Error ? error.message : 'No se pudo generar una red vial valida.';
+    }
   }
 
   exportJson(): void {
@@ -41,6 +49,7 @@ export class EditorPageComponent {
       const project = await this.exportImport.importProject(file);
       this.state.replaceProject(project);
       this.importError = '';
+      this.importNotice = project.migrationNotice ?? '';
     } catch (error) {
       this.importError = error instanceof Error ? error.message : 'No se pudo importar el JSON.';
     } finally {
@@ -51,5 +60,7 @@ export class EditorPageComponent {
   clearMap(): void {
     this.state.clearMap();
     this.importError = '';
+    this.importNotice = '';
+    this.generationError = '';
   }
 }

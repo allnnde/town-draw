@@ -1,27 +1,39 @@
 import { Injectable } from '@angular/core';
 import type { Container, Graphics } from 'pixi.js';
-import { GeneratedMapObject } from '../map-model/generated-object.model';
+import { GeneratedMap } from '../map-model/generated-map.model';
+import { GeneratedNonRoadObject } from '../map-model/generated-object.model';
 import { Point } from '../map-model/point.model';
+import { RoadBridge, RoadEdge } from '../map-model/road-network.model';
 
 type GraphicsConstructor = new () => Graphics;
 
 @Injectable({ providedIn: 'root' })
 export class GeneratedMapRendererService {
-  render(
-    layer: Container,
-    graphicsConstructor: GraphicsConstructor,
-    objects: readonly GeneratedMapObject[],
-  ): void {
+  render(layer: Container, graphicsConstructor: GraphicsConstructor, map: GeneratedMap): void {
     layer.removeChildren();
+    const rivers = map.objects.filter((object) => object.type === 'generated-river');
+    const structures = map.objects.filter((object) => object.type !== 'generated-river');
 
-    for (const object of objects) {
+    for (const object of rivers) {
       layer.addChild(this.createObjectGraphic(graphicsConstructor, object));
+    }
+
+    for (const edge of map.roadNetwork.edges) {
+      layer.addChild(this.createRoadEdgeGraphic(graphicsConstructor, edge));
+    }
+
+    for (const object of structures) {
+      layer.addChild(this.createObjectGraphic(graphicsConstructor, object));
+    }
+
+    for (const bridge of map.roadNetwork.edges.flatMap((edge) => edge.bridges ?? [])) {
+      layer.addChild(this.createBridgeGraphic(graphicsConstructor, bridge));
     }
   }
 
   private createObjectGraphic(
     graphicsConstructor: GraphicsConstructor,
-    object: GeneratedMapObject,
+    object: GeneratedNonRoadObject,
   ): Graphics {
     switch (object.type) {
       case 'generated-river':
@@ -31,14 +43,6 @@ export class GeneratedMapRendererService {
           object.width,
           0x1e90ff,
           0.45,
-        );
-      case 'generated-road':
-        return this.createPolylineGraphic(
-          graphicsConstructor,
-          object.points,
-          object.width,
-          0x8b6f47,
-          0.75,
         );
       case 'generated-tree':
         return this.createTreeGraphic(
@@ -77,22 +81,28 @@ export class GeneratedMapRendererService {
           object.rotation ?? 0,
           object.variant ?? 0,
         );
-      case 'generated-internal-path':
-        return this.createInternalPathGraphic(
-          graphicsConstructor,
-          object.points,
-          object.width,
-          object.pathType,
-        );
-      case 'generated-bridge':
-        return this.createBridgeGraphic(
-          graphicsConstructor,
-          object.position,
-          object.width,
-          object.height,
-          object.angle,
-        );
     }
+  }
+
+  private createRoadEdgeGraphic(
+    graphicsConstructor: GraphicsConstructor,
+    edge: RoadEdge,
+  ): Graphics {
+    const colors = {
+      aisle: 0xd6bc7f,
+      main: 0x705239,
+      path: 0xb89a72,
+      secondary: 0x8b6f47,
+      'service-road': 0x52525b,
+      street: 0x8b7355,
+    } as const;
+    return this.createPolylineGraphic(
+      graphicsConstructor,
+      edge.points,
+      edge.width,
+      colors[edge.roadClass],
+      0.84,
+    );
   }
 
   private createPolylineGraphic(
@@ -126,12 +136,10 @@ export class GeneratedMapRendererService {
     const graphics = new graphicsConstructor();
     const radius = 6 + (variant % 3);
     const highlight = this.rotateOffset(-2, -2, Math.cos(rotation), Math.sin(rotation), position);
-
     graphics.circle(position.x, position.y, radius);
     graphics.fill({ color: 0x276749, alpha: 0.9 });
     graphics.circle(highlight.x, highlight.y, 3);
     graphics.fill({ color: 0x68d391, alpha: 0.75 });
-
     return graphics;
   }
 
@@ -146,7 +154,6 @@ export class GeneratedMapRendererService {
   ): Graphics {
     const graphics = new graphicsConstructor();
     const corners = this.getRotatedRectCorners(position, width, height, rotation);
-
     graphics.poly(
       corners.flatMap((corner) => [corner.x, corner.y]),
       true,
@@ -164,47 +171,23 @@ export class GeneratedMapRendererService {
     return graphics;
   }
 
-  private createInternalPathGraphic(
-    graphicsConstructor: GraphicsConstructor,
-    points: readonly Point[],
-    width: number,
-    pathType: 'street' | 'aisle' | 'service-road',
-  ): Graphics {
-    const colors = {
-      aisle: 0xd6bc7f,
-      'service-road': 0x52525b,
-      street: 0x8b7355,
-    } as const;
-
-    return this.createPolylineGraphic(graphicsConstructor, points, width, colors[pathType], 0.82);
-  }
-
   private createBridgeGraphic(
     graphicsConstructor: GraphicsConstructor,
-    position: Point,
-    width: number,
-    height: number,
-    angle: number,
+    bridge: RoadBridge,
   ): Graphics {
     const graphics = new graphicsConstructor();
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const halfWidth = width / 2;
-    const halfHeight = height / 2;
-    const corners = [
-      this.rotateOffset(-halfWidth, -halfHeight, cos, sin, position),
-      this.rotateOffset(halfWidth, -halfHeight, cos, sin, position),
-      this.rotateOffset(halfWidth, halfHeight, cos, sin, position),
-      this.rotateOffset(-halfWidth, halfHeight, cos, sin, position),
-    ];
-
+    const corners = this.getRotatedRectCorners(
+      bridge.position,
+      bridge.width,
+      bridge.height,
+      bridge.angle,
+    );
     graphics.poly(
       corners.flatMap((corner) => [corner.x, corner.y]),
       true,
     );
     graphics.fill({ color: 0xc49a6c, alpha: 0.95 });
     graphics.stroke({ width: 2, color: 0x5a3b22, alpha: 0.9 });
-
     return graphics;
   }
 
@@ -225,7 +208,6 @@ export class GeneratedMapRendererService {
     const sin = Math.sin(rotation);
     const halfWidth = width / 2;
     const halfHeight = height / 2;
-
     return [
       this.rotateOffset(-halfWidth, -halfHeight, cos, sin, position),
       this.rotateOffset(halfWidth, -halfHeight, cos, sin, position),
@@ -237,7 +219,6 @@ export class GeneratedMapRendererService {
   private getRotatedSegment(position: Point, halfLength: number, rotation: number): [Point, Point] {
     const cos = Math.cos(rotation);
     const sin = Math.sin(rotation);
-
     return [
       this.rotateOffset(-halfLength, 0, cos, sin, position),
       this.rotateOffset(halfLength, 0, cos, sin, position),

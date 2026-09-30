@@ -1,6 +1,7 @@
 import { Component, computed, inject } from '@angular/core';
 import { EditorStateService } from '../../services/editor-state.service';
 import { SketchObject } from '../../../map-model/sketch-object.model';
+import { getGeneratedItemCount } from '../../../map-model/generated-map.model';
 
 interface DetailRow {
   label: string;
@@ -26,6 +27,7 @@ export class InspectorPanelComponent {
   });
   readonly selectedTitle = computed(() => this.getObjectTitle(this.selectedObject()));
   readonly details = computed(() => this.getDetails(this.selectedObject()));
+  readonly generatedItemCount = computed(() => getGeneratedItemCount(this.state.generatedMap()));
 
   private getObjectTitle(object: SketchObject | null): string {
     if (!object) {

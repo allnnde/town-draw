@@ -1,5 +1,7 @@
-import { GeneratedMapObject } from './generated-object.model';
+import { GeneratedMap } from './generated-map.model';
 import { SketchObject } from './sketch-object.model';
+
+export const MAP_PROJECT_VERSION = 2;
 
 export interface MapProject {
   id: string;
@@ -8,7 +10,8 @@ export interface MapProject {
   width: number;
   height: number;
   sketchObjects: SketchObject[];
-  generatedObjects: GeneratedMapObject[];
+  generatedMap: GeneratedMap;
   createdAt: string;
   updatedAt: string;
+  migrationNotice?: string;
 }

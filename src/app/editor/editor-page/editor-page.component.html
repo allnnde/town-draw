@@ -21,6 +21,14 @@
     <p class="import-error" role="alert">{{ importError }}</p>
   }
 
+  @if (generationError) {
+    <p class="import-error" role="alert">{{ generationError }}</p>
+  }
+
+  @if (importNotice) {
+    <p class="import-error" role="status">{{ importNotice }}</p>
+  }
+
   <div class="editor-workspace">
     <app-toolbar />
 
